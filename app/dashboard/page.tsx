@@ -1,56 +1,20 @@
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { requirePortalProfile } from "@/lib/auth/require-portal-profile";
-
-const portalModules = [
-  {
-    title: "Credits",
-    description:
-      "Monitor used, remaining, low, and depleted client credits.",
-  },
-  {
-    title: "Tasks",
-    description:
-      "Manage assignments, task statuses, notes, and Needs Attention requests.",
-  },
-  {
-    title: "Clients",
-    description:
-      "Manage client records, projects, plans, and assignments.",
-  },
-  {
-    title: "Add-ons",
-    description:
-      "Manage additional credits, rollover credits, and adjustments.",
-  },
-  {
-    title: "Users",
-    description:
-      "Invite and manage administrators, supervisors, and agents.",
-  },
-  {
-    title: "Notifications",
-    description:
-      "Review task alerts, credit warnings, and unread notifications.",
-  },
-  {
-    title: "Automation Health",
-    description:
-      "Monitor timer synchronization, calculations, and system activity.",
-  },
-  {
-    title: "Settings",
-    description:
-      "Configure portal rules, credit thresholds, and system preferences.",
-  },
-];
+import {
+  getModuleDescription,
+  getModuleTitle,
+  getPortalModulesForRole,
+} from "@/lib/portal/modules";
 
 function formatRole(role: string): string {
   return role
     .split("_")
     .map(
       (word) =>
-        word.charAt(0).toUpperCase() + word.slice(1),
+        word.charAt(0).toUpperCase() +
+        word.slice(1),
     )
     .join(" ");
 }
@@ -71,6 +35,9 @@ function DashboardLoading() {
 
 async function DashboardContent() {
   const profile = await requirePortalProfile();
+
+  const visibleModules =
+    getPortalModulesForRole(profile.role);
 
   return (
     <main className="min-h-screen bg-neutral-950 text-white">
@@ -97,14 +64,17 @@ async function DashboardContent() {
               </p>
             </div>
 
-            <form action="/auth/signout" method="post">
-  <button
-    type="submit"
-    className="rounded-md border border-neutral-700 px-4 py-2 text-sm font-semibold transition hover:border-[#fd961b] hover:text-[#fd961b]"
-  >
-    Sign out
-  </button>
-</form>
+            <form
+              action="/auth/signout"
+              method="post"
+            >
+              <button
+                type="submit"
+                className="rounded-md border border-neutral-700 px-4 py-2 text-sm font-semibold transition hover:border-[#fd961b] hover:text-[#fd961b]"
+              >
+                Sign out
+              </button>
+            </form>
           </div>
         </div>
       </header>
@@ -153,42 +123,45 @@ async function DashboardContent() {
         </section>
 
         <section className="mt-10">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#fd961b]">
-              Portal modules
-            </p>
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#fd961b]">
+            Portal modules
+          </p>
 
-            <h2 className="mt-2 text-2xl font-bold">
-              Operations dashboard
-            </h2>
+          <h2 className="mt-2 text-2xl font-bold">
+            Operations dashboard
+          </h2>
 
-            <p className="mt-2 text-sm text-neutral-400">
-              Module foundations are ready. Functional
-              screens will be added during the following
-              development phases.
-            </p>
-          </div>
+          <p className="mt-2 text-sm text-neutral-400">
+            Select a module to continue.
+          </p>
 
           <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-            {portalModules.map((module) => (
-              <article
-                key={module.title}
-                className="rounded-xl border border-neutral-800 bg-neutral-900 p-5 transition hover:border-neutral-600"
+            {visibleModules.map((module) => (
+              <Link
+                key={module.key}
+                href={module.href}
+                className="group rounded-xl border border-neutral-800 bg-neutral-900 p-5 transition hover:-translate-y-0.5 hover:border-[#fd961b]"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <h3 className="font-bold">
-                    {module.title}
+                  <h3 className="font-bold group-hover:text-[#fd961b]">
+                    {getModuleTitle(
+                      module,
+                      profile.role,
+                    )}
                   </h3>
 
                   <span className="rounded-full bg-neutral-800 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
-                    Coming soon
+                    Open
                   </span>
                 </div>
 
                 <p className="mt-3 text-sm leading-6 text-neutral-400">
-                  {module.description}
+                  {getModuleDescription(
+                    module,
+                    profile.role,
+                  )}
                 </p>
-              </article>
+              </Link>
             ))}
           </div>
         </section>
