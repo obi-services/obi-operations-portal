@@ -1,8 +1,6 @@
 import { Suspense } from "react";
-import { redirect } from "next/navigation";
 
 import { requirePortalProfile } from "@/lib/auth/require-portal-profile";
-import { createClient } from "@/lib/supabase/server";
 
 const portalModules = [
   {
@@ -74,16 +72,6 @@ function DashboardLoading() {
 async function DashboardContent() {
   const profile = await requirePortalProfile();
 
-  async function signOut() {
-    "use server";
-
-    const supabase = await createClient();
-
-    await supabase.auth.signOut();
-
-    redirect("/auth/login");
-  }
-
   return (
     <main className="min-h-screen bg-neutral-950 text-white">
       <header className="border-b border-neutral-800 bg-black">
@@ -109,14 +97,14 @@ async function DashboardContent() {
               </p>
             </div>
 
-            <form action={signOut}>
-              <button
-                type="submit"
-                className="rounded-md border border-neutral-700 px-4 py-2 text-sm font-semibold transition hover:border-[#fd961b] hover:text-[#fd961b]"
-              >
-                Sign out
-              </button>
-            </form>
+            <form action="/auth/signout" method="post">
+  <button
+    type="submit"
+    className="rounded-md border border-neutral-700 px-4 py-2 text-sm font-semibold transition hover:border-[#fd961b] hover:text-[#fd961b]"
+  >
+    Sign out
+  </button>
+</form>
           </div>
         </div>
       </header>
