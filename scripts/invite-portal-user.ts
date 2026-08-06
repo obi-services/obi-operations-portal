@@ -1,9 +1,13 @@
 import { loadEnvConfig } from "@next/env";
 import { createClient } from "@supabase/supabase-js";
 
-loadEnvConfig(process.cwd());
+import type { AppRole } from "../lib/auth/require-portal-profile";
+import {
+  invitePortalUser,
+  type InvitationActor,
+} from "../lib/users/invite-portal-user";
 
-type PortalRole = "admin" | "supervisor" | "agent";
+loadEnvConfig(process.cwd());
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -34,96 +38,99 @@ function getArgument(name: string): string {
   return (process.argv[index + 1] ?? "").trim();
 }
 
-const email = getArgument("email").toLowerCase();
-const fullName = getArgument("name");
-const role = getArgument("role") as PortalRole;
 
-if (!email) {
-  throw new Error("Missing --email argument.");
-}
-
-if (!fullName) {
-  throw new Error("Missing --name argument.");
-}
-
-if (!["admin", "supervisor", "agent"].includes(role)) {
-  throw new Error(
-    "The --role argument must be admin, supervisor, or agent.",
+function createCliAdminClient() {
+  return createClient(
+    requiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    requiredEnv("SUPABASE_SECRET_KEY"),
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+    },
   );
 }
 
-const siteUrl = requiredEnv("NEXT_PUBLIC_SITE_URL").replace(
-  /\/$/,
-  "",
-);
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "Unknown invitation error.";
+}
 
-const supabase = createClient(
-  requiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
-  requiredEnv("SUPABASE_SECRET_KEY"),
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-      detectSessionInUrl: false,
-    },
-  },
-);
+const email = getArgument("email");
+const fullName = getArgument("name");
+const role = getArgument("role") as AppRole;
+const invitedByEmail = getArgument("invited-by-email").toLowerCase();
 
-async function main(): Promise<void> {
-  console.log(`Inviting ${email} as ${role}...`);
+async function resolveActorProfile(): Promise<InvitationActor | null> {
+  if (!invitedByEmail) {
+    return null;
+  }
 
-  const { data, error } =
-    await supabase.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${siteUrl}/auth/update-password`,
-      data: {
-        full_name: fullName,
-        role,
-      },
-    });
+  const supabase = createCliAdminClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, role, status")
+    .eq("email", invitedByEmail)
+    .maybeSingle();
 
   if (error) {
     throw new Error(
-      `Unable to send invitation: ${error.message}`,
+      `Unable to verify the inviting user: ${error.message}`,
     );
   }
 
-  const userId = data.user?.id;
-
-  if (!userId) {
+  if (!data) {
     throw new Error(
-      "Supabase did not return the invited user ID.",
+      `No portal profile exists for inviting user ${invitedByEmail}.`,
     );
   }
 
-  const { error: profileError } = await supabase
-    .from("profiles")
-    .update({
-      full_name: fullName,
-      role,
-      status: "invited",
-    })
-    .eq("id", userId);
-
-  if (profileError) {
+  if (
+    data.status !== "active" ||
+    !["admin", "supervisor"].includes(data.role)
+  ) {
     throw new Error(
-      `Invitation was sent, but the profile could not be updated: ${profileError.message}`,
+      "The inviting user must be an active Admin or Supervisor.",
     );
   }
+
+  return {
+    id: data.id as string,
+    email: data.email as string,
+    role: data.role as "admin" | "supervisor",
+  };
+}
+
+async function main(): Promise<void> {
+  const siteUrl = requiredEnv("NEXT_PUBLIC_SITE_URL").replace(/\/$/, "");
+  const actor = await resolveActorProfile();
+  const supabase = createCliAdminClient();
+
+  console.log(`Preparing invitation for ${email} as ${role}...`);
+  console.log("Sending the Supabase invitation email...");
+
+  const result = await invitePortalUser(supabase, {
+    email,
+    fullName,
+    role,
+    actor,
+    redirectTo: `${siteUrl}/auth/update-password`,
+    source: "cli",
+  });
 
   console.log("Portal invitation sent successfully.");
-  console.log(`Email: ${email}`);
-  console.log(`Role: ${role}`);
-  console.log(
-    `Password setup: ${siteUrl}/auth/update-password`,
-  );
+  console.log(`Invitation ID: ${result.invitationId}`);
+  console.log(`Invited user ID: ${result.invitedUserId}`);
+  console.log(`Email: ${result.email}`);
+  console.log(`Role: ${result.role}`);
+  console.log(`Invited by: ${actor?.email ?? "System / CLI"}`);
+  console.log(`Password setup: ${siteUrl}/auth/update-password`);
 }
 
 main().catch((error: unknown) => {
-  const message =
-    error instanceof Error
-      ? error.message
-      : "Unknown invitation error.";
-
-  console.error(message);
+  console.error(getErrorMessage(error));
   process.exitCode = 1;
 });
