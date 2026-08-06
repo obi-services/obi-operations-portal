@@ -20,6 +20,10 @@ export type PortalProfile = {
   status: AccountStatus;
 };
 
+export function isPrivilegedPortalRole(role: AppRole): boolean {
+  return role === "admin" || role === "supervisor";
+}
+
 /**
  * Returns the currently authenticated and active portal profile.
  *
@@ -61,4 +65,17 @@ export async function requirePortalProfile(): Promise<PortalProfile> {
   }
 
   return profile as PortalProfile;
+}
+
+/**
+ * Returns the active Admin or Supervisor profile for protected management pages.
+ */
+export async function requirePrivilegedPortalProfile(): Promise<PortalProfile> {
+  const profile = await requirePortalProfile();
+
+  if (!isPrivilegedPortalRole(profile.role)) {
+    redirect("/dashboard");
+  }
+
+  return profile;
 }
