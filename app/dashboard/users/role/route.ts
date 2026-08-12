@@ -1,29 +1,13 @@
+import { revalidatePath } from "next/cache";
 import { type NextRequest, NextResponse } from "next/server";
 
-import type { AppRole } from "@/lib/auth/require-portal-profile";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
-  invitePortalUser,
-  PortalInvitationError,
-} from "@/lib/users/invite-portal-user";
-
-type PrivilegedActor = {
-  id: string;
-  email: string;
-  role: "admin" | "supervisor";
-  status: "active";
-};
-
-function getRequiredEnvironmentVariable(name: string): string {
-  const value = process.env[name];
-
-  if (!value) {
-    throw new Error(`Missing ${name} environment variable.`);
-  }
-
-  return value;
-}
+  changePortalUserRole,
+  PortalRoleChangeError,
+  type RoleChangeActor,
+} from "@/lib/users/change-portal-user-role";
 
 function buildRedirectUrl(
   request: NextRequest,
@@ -88,10 +72,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (
-      actorData.status !== "active" ||
-      !["admin", "supervisor"].includes(actorData.role)
-    ) {
+    if (actorData.status !== "active") {
       const usersUrl = buildRedirectUrl(request, {});
 
       return NextResponse.redirect(
@@ -100,44 +81,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const formData = await request.formData();
-    const fullName = String(formData.get("full_name") ?? "");
-    const email = String(formData.get("email") ?? "");
-    const role = String(formData.get("role") ?? "agent") as AppRole;
-
-    if (actorData.role === "supervisor" && role !== "agent") {
+    if (actorData.role !== "admin") {
       return redirectToUsers(request, {
-        error: "Supervisors can invite Agent accounts only.",
+        error: "Only administrators can change portal roles.",
       });
     }
 
-    const siteUrl = getRequiredEnvironmentVariable(
-      "NEXT_PUBLIC_SITE_URL",
-    ).replace(/\/$/, "");
+    const formData = await request.formData();
+    const targetUserId = String(formData.get("target_user_id") ?? "");
+    const newRole = String(formData.get("role") ?? "");
     const adminClient = createAdminClient();
-    const actor = actorData as PrivilegedActor;
+    const actor = actorData as RoleChangeActor;
 
-    const result = await invitePortalUser(adminClient, {
-      email,
-      fullName,
-      role,
-      actor: {
-        id: actor.id,
-        email: actor.email,
-        role: actor.role,
-      },
-      redirectTo: `${siteUrl}/auth/update-password`,
-      source: "portal",
+    const result = await changePortalUserRole(adminClient, {
+      actor,
+      targetUserId,
+      newRole,
     });
 
+    revalidatePath("/dashboard/users");
+
     return redirectToUsers(request, {
-      message: `Invitation sent to ${result.email}.`,
+      message: `${result.fullName || result.email}'s role changed from ${result.oldRole} to ${result.newRole}.`,
     });
   } catch (error: unknown) {
     const message =
-      error instanceof PortalInvitationError || error instanceof Error
+      error instanceof PortalRoleChangeError || error instanceof Error
         ? error.message
-        : "The invitation could not be sent.";
+        : "The portal role could not be changed.";
 
     return redirectToUsers(request, {
       error: message,
