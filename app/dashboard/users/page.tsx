@@ -7,6 +7,7 @@ import {
   requirePrivilegedPortalProfile,
 } from "@/lib/auth/require-portal-profile";
 import { createClient } from "@/lib/supabase/server";
+import { InvitationAction } from "./invitation-action";
 import { UserStatusAction } from "./status-action";
 
 type UsersPageProps = {
@@ -32,8 +33,12 @@ type InvitationRow = {
   full_name: string;
   role: AppRole;
   status: "pending" | "accepted" | "expired" | "revoked" | "failed";
+  invited_user_id: string | null;
   sent_at: string;
+  last_sent_at: string;
+  send_count: number;
   accepted_at: string | null;
+  revoked_at: string | null;
   failure_message: string | null;
 };
 
@@ -113,6 +118,20 @@ function formatEventSummary(event: ManagementEventRow): string | null {
     }
   }
 
+  if (event.action === "invitation_resent") {
+    const newSendCount = event.details?.new_send_count;
+
+    if (typeof newSendCount === "number") {
+      return `Invitation resent · Send #${newSendCount}`;
+    }
+
+    return "Invitation resent";
+  }
+
+  if (event.action === "invitation_revoked") {
+    return "Pending invitation revoked";
+  }
+
   return null;
 }
 
@@ -146,7 +165,7 @@ async function UsersContent({ searchParams }: UsersPageProps) {
     supabase
       .from("user_invitations")
       .select(
-        "id, email, full_name, role, status, sent_at, accepted_at, failure_message",
+        "id, email, full_name, role, status, invited_user_id, sent_at, last_sent_at, send_count, accepted_at, revoked_at, failure_message",
       )
       .order("created_at", { ascending: false })
       .limit(25),
@@ -445,34 +464,67 @@ async function UsersContent({ searchParams }: UsersPageProps) {
             <h2 className="text-xl font-bold">Invitation history</h2>
 
             <div className="mt-5 space-y-3">
-              {invitations.map((invitation) => (
-                <div
-                  key={invitation.id}
-                  className="rounded-xl border border-neutral-800 bg-neutral-950 p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">{invitation.full_name}</p>
-                      <p className="mt-1 text-sm text-neutral-400">
-                        {invitation.email} · {formatLabel(invitation.role)}
-                      </p>
+              {invitations.map((invitation) => {
+                const canManageInvitation =
+                  invitation.status === "pending" &&
+                  (isAdmin ||
+                    (profile.role === "supervisor" &&
+                      invitation.role === "agent"));
+
+                return (
+                  <div
+                    key={invitation.id}
+                    className="rounded-xl border border-neutral-800 bg-neutral-950 p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{invitation.full_name}</p>
+                        <p className="mt-1 text-sm text-neutral-400">
+                          {invitation.email} · {formatLabel(invitation.role)}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(invitation.status)}`}
+                      >
+                        {formatLabel(invitation.status)}
+                      </span>
                     </div>
-                    <span
-                      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(invitation.status)}`}
-                    >
-                      {formatLabel(invitation.status)}
-                    </span>
+
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+                      <span>First sent {formatDate(invitation.sent_at)}</span>
+                      <span>Last sent {formatDate(invitation.last_sent_at)}</span>
+                      <span>Send count {invitation.send_count}</span>
+                    </div>
+
+                    {invitation.revoked_at && (
+                      <p className="mt-2 text-xs text-neutral-500">
+                        Revoked {formatDate(invitation.revoked_at)}
+                      </p>
+                    )}
+
+                    {invitation.failure_message && (
+                      <p className="mt-2 text-xs text-red-300">
+                        {invitation.failure_message}
+                      </p>
+                    )}
+
+                    {canManageInvitation && (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <InvitationAction
+                          invitationId={invitation.id}
+                          email={invitation.email}
+                          action="resend"
+                        />
+                        <InvitationAction
+                          invitationId={invitation.id}
+                          email={invitation.email}
+                          action="revoke"
+                        />
+                      </div>
+                    )}
                   </div>
-                  <p className="mt-3 text-xs text-neutral-500">
-                    Sent {formatDate(invitation.sent_at)}
-                  </p>
-                  {invitation.failure_message && (
-                    <p className="mt-2 text-xs text-red-300">
-                      {invitation.failure_message}
-                    </p>
-                  )}
-                </div>
-              ))}
+                );
+              })}
 
               {invitations.length === 0 && (
                 <p className="text-sm text-neutral-500">

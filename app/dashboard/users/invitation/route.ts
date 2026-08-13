@@ -1,0 +1,131 @@
+import { revalidatePath } from "next/cache";
+import { type NextRequest, NextResponse } from "next/server";
+
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
+import {
+  managePortalInvitation,
+  PortalInvitationManagementError,
+  type InvitationManagementActor,
+} from "@/lib/users/manage-portal-invitation";
+
+function getRequiredEnvironmentVariable(name: string): string {
+  const value = process.env[name];
+
+  if (!value) {
+    throw new Error(`Missing ${name} environment variable.`);
+  }
+
+  return value;
+}
+
+function buildRedirectUrl(
+  request: NextRequest,
+  parameters: Record<string, string>,
+): URL {
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const host = forwardedHost ?? request.headers.get("host");
+  const protocol =
+    request.headers.get("x-forwarded-proto") ??
+    (host?.includes("localhost") || host?.startsWith("127.0.0.1")
+      ? "http"
+      : "https");
+  const origin = host
+    ? `${protocol}://${host}`
+    : new URL(request.url).origin;
+  const url = new URL("/dashboard/users", origin);
+
+  Object.entries(parameters).forEach(([key, value]) => {
+    url.searchParams.set(key, value);
+  });
+
+  return url;
+}
+
+function redirectToUsers(
+  request: NextRequest,
+  parameters: Record<string, string>,
+): NextResponse {
+  return NextResponse.redirect(
+    buildRedirectUrl(request, parameters),
+    { status: 303 },
+  );
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const sessionClient = await createClient();
+    const {
+      data: claimsData,
+      error: claimsError,
+    } = await sessionClient.auth.getClaims();
+    const userId = claimsData?.claims?.sub;
+
+    if (claimsError || !userId) {
+      return NextResponse.redirect(
+        buildRedirectUrl(request, {
+          error: "Your session has expired. Please sign in again.",
+        }),
+        { status: 303 },
+      );
+    }
+
+    const { data: actorData, error: actorError } = await sessionClient
+      .from("profiles")
+      .select("id, email, role, status")
+      .eq("id", userId)
+      .single();
+
+    if (actorError || !actorData) {
+      return redirectToUsers(request, {
+        error: "Your portal profile could not be verified.",
+      });
+    }
+
+    if (
+      actorData.status !== "active" ||
+      !["admin", "supervisor"].includes(actorData.role)
+    ) {
+      const usersUrl = buildRedirectUrl(request, {});
+
+      return NextResponse.redirect(
+        new URL("/dashboard", usersUrl.origin),
+        { status: 303 },
+      );
+    }
+
+    const formData = await request.formData();
+    const invitationId = String(formData.get("invitation_id") ?? "");
+    const action = String(formData.get("action") ?? "");
+    const siteUrl = getRequiredEnvironmentVariable(
+      "NEXT_PUBLIC_SITE_URL",
+    ).replace(/\/$/, "");
+    const adminClient = createAdminClient();
+    const actor = actorData as InvitationManagementActor;
+
+    const result = await managePortalInvitation(adminClient, {
+      actor,
+      invitationId,
+      action,
+      redirectTo: `${siteUrl}/auth/update-password`,
+    });
+
+    revalidatePath("/dashboard/users");
+
+    return redirectToUsers(request, {
+      message:
+        result.action === "resend"
+          ? `Invitation resent to ${result.email}.`
+          : `Invitation for ${result.email} has been revoked.`,
+    });
+  } catch (error: unknown) {
+    const message =
+      error instanceof PortalInvitationManagementError || error instanceof Error
+        ? error.message
+        : "The invitation action could not be completed.";
+
+    return redirectToUsers(request, {
+      error: message,
+    });
+  }
+}
