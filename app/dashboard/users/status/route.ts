@@ -1,29 +1,13 @@
+import { revalidatePath } from "next/cache";
 import { type NextRequest, NextResponse } from "next/server";
 
-import type { AppRole } from "@/lib/auth/require-portal-profile";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
-  invitePortalUser,
-  PortalInvitationError,
-} from "@/lib/users/invite-portal-user";
-
-type PrivilegedActor = {
-  id: string;
-  email: string;
-  role: "admin" | "supervisor";
-  status: "active";
-};
-
-function getRequiredEnvironmentVariable(name: string): string {
-  const value = process.env[name];
-
-  if (!value) {
-    throw new Error(`Missing ${name} environment variable.`);
-  }
-
-  return value;
-}
+  changePortalUserStatus,
+  PortalStatusChangeError,
+  type StatusChangeActor,
+} from "@/lib/users/change-portal-user-status";
 
 function buildRedirectUrl(
   request: NextRequest,
@@ -101,43 +85,31 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData();
-    const fullName = String(formData.get("full_name") ?? "");
-    const email = String(formData.get("email") ?? "");
-    const role = String(formData.get("role") ?? "agent") as AppRole;
-
-    if (actorData.role === "supervisor" && role !== "agent") {
-      return redirectToUsers(request, {
-        error: "Supervisors can invite Agent accounts only.",
-      });
-    }
-
-    const siteUrl = getRequiredEnvironmentVariable(
-      "NEXT_PUBLIC_SITE_URL",
-    ).replace(/\/$/, "");
+    const targetUserId = String(formData.get("target_user_id") ?? "");
+    const action = String(formData.get("action") ?? "");
     const adminClient = createAdminClient();
-    const actor = actorData as PrivilegedActor;
+    const actor = actorData as StatusChangeActor;
 
-    const result = await invitePortalUser(adminClient, {
-      email,
-      fullName,
-      role,
-      actor: {
-        id: actor.id,
-        email: actor.email,
-        role: actor.role,
-      },
-      redirectTo: `${siteUrl}/auth/update-password`,
-      source: "portal",
+    const result = await changePortalUserStatus(adminClient, {
+      actor,
+      targetUserId,
+      action,
     });
 
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard");
+
     return redirectToUsers(request, {
-      message: `Invitation sent to ${result.email}.`,
+      message:
+        result.newStatus === "suspended"
+          ? `${result.fullName || result.email} has been suspended.`
+          : `${result.fullName || result.email} has been reactivated.`,
     });
   } catch (error: unknown) {
     const message =
-      error instanceof PortalInvitationError || error instanceof Error
+      error instanceof PortalStatusChangeError || error instanceof Error
         ? error.message
-        : "The invitation could not be sent.";
+        : "The portal account status could not be changed.";
 
     return redirectToUsers(request, {
       error: message,

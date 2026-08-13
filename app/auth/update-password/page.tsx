@@ -16,6 +16,7 @@ export default function UpdatePasswordPage() {
   const [isReady, setIsReady] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  const [invitationEmail, setInvitationEmail] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -25,28 +26,13 @@ export default function UpdatePasswordPage() {
     async function initializeInvitationSession() {
       setErrorMessage("");
       setIsInitializing(true);
+      setIsReady(false);
 
       /*
-       * The user may already have an active browser session.
-       */
-      const {
-        data: { session: existingSession },
-      } = await supabase.auth.getSession();
-
-      if (existingSession) {
-        if (!isCancelled) {
-          setIsReady(true);
-          setIsInitializing(false);
-        }
-
-        return;
-      }
-
-      /*
-       * Default Supabase invitation emails return the tokens
-       * in the URL fragment:
-       *
-       * #access_token=...&refresh_token=...&type=invite
+       * Invitation tokens take priority over any session that may already
+       * exist in this browser. This prevents an invitation opened while
+       * another portal user is signed in from changing the wrong account's
+       * password.
        */
       const hash = window.location.hash.startsWith("#")
         ? window.location.hash.substring(1)
@@ -55,12 +41,11 @@ export default function UpdatePasswordPage() {
       const parameters = new URLSearchParams(hash);
 
       const authError =
-        parameters.get("error_description") ??
-        parameters.get("error");
+        parameters.get("error_description") ?? parameters.get("error");
 
       if (authError) {
         if (!isCancelled) {
-          setErrorMessage(decodeURIComponent(authError));
+          setErrorMessage(authError);
           setIsInitializing(false);
         }
 
@@ -69,8 +54,96 @@ export default function UpdatePasswordPage() {
 
       const accessToken = parameters.get("access_token");
       const refreshToken = parameters.get("refresh_token");
+      const authType = parameters.get("type");
+      const hasInvitationTokens = Boolean(accessToken || refreshToken);
 
-      if (!accessToken || !refreshToken) {
+      if (hasInvitationTokens) {
+        if (!accessToken || !refreshToken) {
+          if (!isCancelled) {
+            setErrorMessage(
+              "The invitation session is incomplete. Please request a new invitation.",
+            );
+            setIsInitializing(false);
+          }
+
+          return;
+        }
+
+        if (authType && authType !== "invite") {
+          if (!isCancelled) {
+            setErrorMessage(
+              "This link is not a valid portal invitation. Please request a new invitation.",
+            );
+            setIsInitializing(false);
+          }
+
+          return;
+        }
+
+        const { data: sessionData, error: sessionError } =
+          await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+
+        if (sessionError || !sessionData.session) {
+          if (!isCancelled) {
+            setErrorMessage(
+              sessionError?.message ??
+                "The invitation session could not be established.",
+            );
+            setIsInitializing(false);
+          }
+
+          return;
+        }
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          if (!isCancelled) {
+            setErrorMessage(
+              userError?.message ??
+                "The invitation session could not be verified.",
+            );
+            setIsInitializing(false);
+          }
+
+          return;
+        }
+
+        /*
+         * Remove sensitive invitation tokens from the visible browser URL
+         * only after the invitation session has been established.
+         */
+        window.history.replaceState(
+          null,
+          document.title,
+          `${window.location.pathname}${window.location.search}`,
+        );
+
+        if (!isCancelled) {
+          setInvitationEmail(user.email ?? "");
+          setIsReady(true);
+          setIsInitializing(false);
+        }
+
+        return;
+      }
+
+      /*
+       * If the invitation session was already established and the page was
+       * refreshed after the URL fragment was removed, allow that verified
+       * browser session to continue.
+       */
+      const {
+        data: { session: existingSession },
+      } = await supabase.auth.getSession();
+
+      if (!existingSession) {
         if (!isCancelled) {
           setErrorMessage(
             "The invitation session is missing or has expired. Please request a new invitation.",
@@ -81,33 +154,24 @@ export default function UpdatePasswordPage() {
         return;
       }
 
-      /*
-       * Store the invitation session in the browser.
-       */
-      const { error } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      });
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      if (error) {
+      if (userError || !user) {
         if (!isCancelled) {
-          setErrorMessage(error.message);
+          setErrorMessage(
+            userError?.message ?? "The invitation session is no longer valid.",
+          );
           setIsInitializing(false);
         }
 
         return;
       }
 
-      /*
-       * Remove sensitive tokens from the visible browser URL.
-       */
-      window.history.replaceState(
-        null,
-        document.title,
-        window.location.pathname,
-      );
-
       if (!isCancelled) {
+        setInvitationEmail(user.email ?? "");
         setIsReady(true);
         setIsInitializing(false);
       }
@@ -127,16 +191,12 @@ export default function UpdatePasswordPage() {
     setSuccessMessage("");
 
     if (!isReady) {
-      setErrorMessage(
-        "Your invitation session has not been established.",
-      );
+      setErrorMessage("Your invitation session has not been established.");
       return;
     }
 
     if (password.length < 10) {
-      setErrorMessage(
-        "Your password must contain at least 10 characters.",
-      );
+      setErrorMessage("Your password must contain at least 10 characters.");
       return;
     }
 
@@ -147,9 +207,6 @@ export default function UpdatePasswordPage() {
 
     setIsSaving(true);
 
-    /*
-     * Confirm that the invitation session belongs to a valid user.
-     */
     const {
       data: { user },
       error: userError,
@@ -157,20 +214,27 @@ export default function UpdatePasswordPage() {
 
     if (userError || !user) {
       setErrorMessage(
-        userError?.message ??
-          "The invitation session is no longer valid.",
+        userError?.message ?? "The invitation session is no longer valid.",
       );
       setIsSaving(false);
       return;
     }
 
-    /*
-     * Set the invited user's password.
-     */
-    const { error: updateError } =
-      await supabase.auth.updateUser({
-        password,
-      });
+    if (
+      invitationEmail &&
+      user.email &&
+      user.email.toLowerCase() !== invitationEmail.toLowerCase()
+    ) {
+      setErrorMessage(
+        "The invitation session changed unexpectedly. Please reopen the invitation email and try again.",
+      );
+      setIsSaving(false);
+      return;
+    }
+
+    const { error: updateError } = await supabase.auth.updateUser({
+      password,
+    });
 
     if (updateError) {
       setErrorMessage(updateError.message);
@@ -182,9 +246,6 @@ export default function UpdatePasswordPage() {
       "Your password was created successfully. Redirecting to login...",
     );
 
-    /*
-     * Require a fresh login after password creation.
-     */
     await supabase.auth.signOut();
 
     window.setTimeout(() => {
@@ -198,14 +259,17 @@ export default function UpdatePasswordPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-black px-4 text-white">
       <section className="w-full max-w-md rounded-xl border border-neutral-800 bg-neutral-950 p-7 shadow-xl">
-        <h1 className="text-2xl font-bold">
-          Create Your Password
-        </h1>
+        <h1 className="text-2xl font-bold">Create Your Password</h1>
 
         <p className="mt-2 text-sm text-neutral-400">
-          Create the password you will use to access the OBI
-          Operations Portal.
+          Create the password you will use to access the OBI Operations Portal.
         </p>
+
+        {invitationEmail && isReady && (
+          <p className="mt-3 text-xs text-neutral-500">
+            Setting up access for {invitationEmail}
+          </p>
+        )}
 
         {isInitializing && (
           <p className="mt-6 text-sm text-neutral-300">
@@ -231,10 +295,7 @@ export default function UpdatePasswordPage() {
           </div>
         )}
 
-        <form
-          onSubmit={handleSubmit}
-          className="mt-6 space-y-5"
-        >
+        <form onSubmit={handleSubmit} className="mt-6 space-y-5">
           <div>
             <label
               htmlFor="password"
@@ -250,9 +311,7 @@ export default function UpdatePasswordPage() {
               required
               minLength={10}
               value={password}
-              onChange={(event) =>
-                setPassword(event.target.value)
-              }
+              onChange={(event) => setPassword(event.target.value)}
               disabled={!isReady || isSaving}
               className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-3 outline-none focus:border-orange-500 disabled:cursor-not-allowed disabled:opacity-60"
             />
@@ -273,9 +332,7 @@ export default function UpdatePasswordPage() {
               required
               minLength={10}
               value={confirmPassword}
-              onChange={(event) =>
-                setConfirmPassword(event.target.value)
-              }
+              onChange={(event) => setConfirmPassword(event.target.value)}
               disabled={!isReady || isSaving}
               className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-3 outline-none focus:border-orange-500 disabled:cursor-not-allowed disabled:opacity-60"
             />
@@ -286,9 +343,7 @@ export default function UpdatePasswordPage() {
             disabled={!isReady || isSaving}
             className="w-full rounded-md bg-orange-500 px-4 py-3 font-semibold text-black transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isSaving
-              ? "Creating password..."
-              : "Create password"}
+            {isSaving ? "Creating password..." : "Create password"}
           </button>
         </form>
       </section>

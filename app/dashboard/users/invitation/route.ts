@@ -1,19 +1,13 @@
+import { revalidatePath } from "next/cache";
 import { type NextRequest, NextResponse } from "next/server";
 
-import type { AppRole } from "@/lib/auth/require-portal-profile";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
-  invitePortalUser,
-  PortalInvitationError,
-} from "@/lib/users/invite-portal-user";
-
-type PrivilegedActor = {
-  id: string;
-  email: string;
-  role: "admin" | "supervisor";
-  status: "active";
-};
+  managePortalInvitation,
+  PortalInvitationManagementError,
+  type InvitationManagementActor,
+} from "@/lib/users/manage-portal-invitation";
 
 function getRequiredEnvironmentVariable(name: string): string {
   const value = process.env[name];
@@ -101,43 +95,34 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData();
-    const fullName = String(formData.get("full_name") ?? "");
-    const email = String(formData.get("email") ?? "");
-    const role = String(formData.get("role") ?? "agent") as AppRole;
-
-    if (actorData.role === "supervisor" && role !== "agent") {
-      return redirectToUsers(request, {
-        error: "Supervisors can invite Agent accounts only.",
-      });
-    }
-
+    const invitationId = String(formData.get("invitation_id") ?? "");
+    const action = String(formData.get("action") ?? "");
     const siteUrl = getRequiredEnvironmentVariable(
       "NEXT_PUBLIC_SITE_URL",
     ).replace(/\/$/, "");
     const adminClient = createAdminClient();
-    const actor = actorData as PrivilegedActor;
+    const actor = actorData as InvitationManagementActor;
 
-    const result = await invitePortalUser(adminClient, {
-      email,
-      fullName,
-      role,
-      actor: {
-        id: actor.id,
-        email: actor.email,
-        role: actor.role,
-      },
+    const result = await managePortalInvitation(adminClient, {
+      actor,
+      invitationId,
+      action,
       redirectTo: `${siteUrl}/auth/update-password`,
-      source: "portal",
     });
 
+    revalidatePath("/dashboard/users");
+
     return redirectToUsers(request, {
-      message: `Invitation sent to ${result.email}.`,
+      message:
+        result.action === "resend"
+          ? `Invitation resent to ${result.email}.`
+          : `Invitation for ${result.email} has been revoked.`,
     });
   } catch (error: unknown) {
     const message =
-      error instanceof PortalInvitationError || error instanceof Error
+      error instanceof PortalInvitationManagementError || error instanceof Error
         ? error.message
-        : "The invitation could not be sent.";
+        : "The invitation action could not be completed.";
 
     return redirectToUsers(request, {
       error: message,
