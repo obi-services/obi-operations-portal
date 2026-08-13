@@ -7,6 +7,7 @@ import {
   requirePrivilegedPortalProfile,
 } from "@/lib/auth/require-portal-profile";
 import { createClient } from "@/lib/supabase/server";
+import { UserStatusAction } from "./status-action";
 
 type UsersPageProps = {
   searchParams: Promise<{
@@ -100,6 +101,15 @@ function formatEventSummary(event: ManagementEventRow): string | null {
 
     if (oldRole && newRole) {
       return `${formatLabel(oldRole)} → ${formatLabel(newRole)}`;
+    }
+  }
+
+  if (event.action === "status_changed") {
+    const oldStatus = getDetailString(event.details, "old_status");
+    const newStatus = getDetailString(event.details, "new_status");
+
+    if (oldStatus && newStatus) {
+      return `${formatLabel(oldStatus)} → ${formatLabel(newStatus)}`;
     }
   }
 
@@ -312,14 +322,14 @@ async function UsersContent({ searchParams }: UsersPageProps) {
               <h2 className="text-xl font-bold">Portal users</h2>
               <p className="mt-2 text-sm text-neutral-400">
                 {isAdmin
-                  ? "Change another user's role directly from the table. Your own role is locked for safety."
-                  : "Role changes are restricted to administrators."}
+                  ? "Manage another user's role and account status. Your own role and status are locked for safety."
+                  : "Supervisors can suspend or reactivate Agent accounts. Role changes remain restricted to administrators."}
               </p>
             </div>
           </div>
 
           <div className="mt-5 overflow-x-auto">
-            <table className="w-full min-w-[1050px] text-left text-sm">
+            <table className="w-full min-w-[1180px] text-left text-sm">
               <thead className="border-b border-neutral-800 text-neutral-400">
                 <tr>
                   <th className="px-3 py-3 font-medium">Name</th>
@@ -328,11 +338,17 @@ async function UsersContent({ searchParams }: UsersPageProps) {
                   <th className="px-3 py-3 font-medium">Status</th>
                   <th className="px-3 py-3 font-medium">Accepted</th>
                   <th className="px-3 py-3 font-medium">Created</th>
+                  <th className="px-3 py-3 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {users.map((user) => {
                   const isCurrentUser = user.id === profile.id;
+                  const canManageStatus =
+                    !isCurrentUser &&
+                    (user.status === "active" || user.status === "suspended") &&
+                    (isAdmin ||
+                      (profile.role === "supervisor" && user.role === "agent"));
 
                   return (
                     <tr key={user.id} className="border-b border-neutral-800/70">
@@ -391,13 +407,30 @@ async function UsersContent({ searchParams }: UsersPageProps) {
                       <td className="px-3 py-4 text-neutral-400">
                         {formatDate(user.created_at)}
                       </td>
+                      <td className="px-3 py-4">
+                        {canManageStatus ? (
+                          <UserStatusAction
+                            targetUserId={user.id}
+                            targetName={user.full_name || user.email}
+                            action={
+                              user.status === "active"
+                                ? "suspend"
+                                : "reactivate"
+                            }
+                          />
+                        ) : (
+                          <span className="text-xs text-neutral-600">
+                            {isCurrentUser ? "Locked" : "Unavailable"}
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
 
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-3 py-8 text-center text-neutral-500">
+                    <td colSpan={7} className="px-3 py-8 text-center text-neutral-500">
                       No portal users were found.
                     </td>
                   </tr>
