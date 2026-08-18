@@ -1,0 +1,326 @@
+import Link from "next/link";
+import { Suspense } from "react";
+
+import { requirePrivilegedPortalProfile } from "@/lib/auth/require-portal-profile";
+import { createClient } from "@/lib/supabase/server";
+
+type ClientsPageProps = {
+  searchParams: Promise<{
+    message?: string;
+    error?: string;
+  }>;
+};
+
+type ClientStatus = "active" | "inactive" | "cancelled";
+type ProjectStatus = "active" | "inactive" | "cancelled";
+type AssignmentStatus = "active" | "inactive";
+
+type ClientRow = {
+  id: string;
+  client_code: string;
+  client_name: string;
+  status: ClientStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type ProjectRow = {
+  id: string;
+  client_id: string;
+  external_project_id: string;
+  project_name: string;
+  task_id_prefix: string | null;
+  status: ProjectStatus;
+  include_in_dashboard: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type AssignmentRow = {
+  id: string;
+  project_id: string;
+  status: AssignmentStatus;
+};
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat("en-PH", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function formatLabel(value: string): string {
+  return value
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function statusClass(status: ClientStatus): string {
+  switch (status) {
+    case "active":
+      return "border-green-900 bg-green-950/40 text-green-300";
+    case "cancelled":
+      return "border-red-900 bg-red-950/40 text-red-300";
+    default:
+      return "border-neutral-700 bg-neutral-800 text-neutral-300";
+  }
+}
+
+function ClientsLoading() {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-neutral-950 text-white">
+      <p className="text-sm text-neutral-400">Loading client management...</p>
+    </main>
+  );
+}
+
+async function ClientsContent({ searchParams }: ClientsPageProps) {
+  const [profile, parameters] = await Promise.all([
+    requirePrivilegedPortalProfile(),
+    searchParams,
+  ]);
+
+  const supabase = await createClient();
+
+  const [clientsResult, projectsResult, assignmentsResult] = await Promise.all([
+    supabase
+      .from("clients")
+      .select(
+        "id, client_code, client_name, status, notes, created_at, updated_at",
+      )
+      .order("client_code", { ascending: true }),
+    supabase
+      .from("projects")
+      .select(
+        "id, client_id, external_project_id, project_name, task_id_prefix, status, include_in_dashboard, created_at, updated_at",
+      )
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("project_assignments")
+      .select("id, project_id, status")
+      .eq("status", "active"),
+  ]);
+
+  const clients = (clientsResult.data ?? []) as ClientRow[];
+  const projects = (projectsResult.data ?? []) as ProjectRow[];
+  const activeAssignments = (assignmentsResult.data ?? []) as AssignmentRow[];
+
+  const loadError =
+    clientsResult.error?.message ??
+    projectsResult.error?.message ??
+    assignmentsResult.error?.message ??
+    "";
+
+  const activeClientCount = clients.filter(
+    (client) => client.status === "active",
+  ).length;
+
+  const activeProjectCount = projects.filter(
+    (project) => project.status === "active",
+  ).length;
+
+  const projectById = new Map(
+    projects.map((project) => [project.id, project]),
+  );
+
+  const projectCountByClient = new Map<string, number>();
+  const activeProjectCountByClient = new Map<string, number>();
+  const activeAssignmentCountByClient = new Map<string, number>();
+
+  projects.forEach((project) => {
+    projectCountByClient.set(
+      project.client_id,
+      (projectCountByClient.get(project.client_id) ?? 0) + 1,
+    );
+
+    if (project.status === "active") {
+      activeProjectCountByClient.set(
+        project.client_id,
+        (activeProjectCountByClient.get(project.client_id) ?? 0) + 1,
+      );
+    }
+  });
+
+  activeAssignments.forEach((assignment) => {
+    const project = projectById.get(assignment.project_id);
+
+    if (!project) {
+      return;
+    }
+
+    activeAssignmentCountByClient.set(
+      project.client_id,
+      (activeAssignmentCountByClient.get(project.client_id) ?? 0) + 1,
+    );
+  });
+
+  return (
+    <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">
+      <div className="mx-auto max-w-7xl">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <Link
+              href="/dashboard"
+              className="text-sm font-semibold text-[#fd961b] hover:underline"
+            >
+              ← Back to dashboard
+            </Link>
+
+            <p className="mt-6 text-sm font-semibold uppercase tracking-[0.16em] text-[#31e92b]">
+              OBI Operations Portal
+            </p>
+
+            <h1 className="mt-2 text-3xl font-bold">Client Management</h1>
+
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
+              Review client records, project coverage, and active Agent
+              assignments. Client and project editing controls will be added in
+              the next Phase 4 steps.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm">
+            <p className="text-neutral-500">Signed in as</p>
+            <p className="mt-1 font-semibold">{profile.full_name}</p>
+            <p className="text-xs capitalize text-neutral-400">
+              {profile.role}
+            </p>
+          </div>
+        </div>
+
+        {parameters.message && (
+          <div className="mt-6 rounded-lg border border-green-900 bg-green-950/40 px-4 py-3 text-sm text-green-300">
+            {parameters.message}
+          </div>
+        )}
+
+        {parameters.error && (
+          <div className="mt-6 rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+            {parameters.error}
+          </div>
+        )}
+
+        {loadError && (
+          <div className="mt-6 rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+            Some client-management records could not be loaded: {loadError}
+          </div>
+        )}
+
+        <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            ["Clients", clients.length],
+            ["Active clients", activeClientCount],
+            ["Active projects", activeProjectCount],
+            ["Active assignments", activeAssignments.length],
+          ].map(([label, value]) => (
+            <article
+              key={label}
+              className="rounded-xl border border-neutral-800 bg-neutral-900 p-5"
+            >
+              <p className="text-sm text-neutral-400">{label}</p>
+              <p className="mt-2 text-3xl font-bold">{value}</p>
+            </article>
+          ))}
+        </section>
+
+        <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
+          <div>
+            <h2 className="text-xl font-bold">Clients</h2>
+            <p className="mt-2 text-sm text-neutral-400">
+              Current client records with project and active assignment totals.
+            </p>
+          </div>
+
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[1180px] text-left text-sm">
+              <thead className="border-b border-neutral-800 text-neutral-400">
+                <tr>
+                  <th className="px-3 py-3 font-medium">Client ID</th>
+                  <th className="px-3 py-3 font-medium">Client name</th>
+                  <th className="px-3 py-3 font-medium">Status</th>
+                  <th className="px-3 py-3 font-medium">Projects</th>
+                  <th className="px-3 py-3 font-medium">Active projects</th>
+                  <th className="px-3 py-3 font-medium">Active assignments</th>
+                  <th className="px-3 py-3 font-medium">Notes</th>
+                  <th className="px-3 py-3 font-medium">Updated</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {clients.map((client) => (
+                  <tr
+                    key={client.id}
+                    className="border-b border-neutral-800/70"
+                  >
+                    <td className="px-3 py-4 font-medium text-[#fd961b]">
+                      {client.client_code}
+                    </td>
+
+                    <td className="px-3 py-4 font-medium">
+                      {client.client_name}
+                    </td>
+
+                    <td className="px-3 py-4">
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(
+                          client.status,
+                        )}`}
+                      >
+                        {formatLabel(client.status)}
+                      </span>
+                    </td>
+
+                    <td className="px-3 py-4 text-neutral-300">
+                      {projectCountByClient.get(client.id) ?? 0}
+                    </td>
+
+                    <td className="px-3 py-4 text-neutral-300">
+                      {activeProjectCountByClient.get(client.id) ?? 0}
+                    </td>
+
+                    <td className="px-3 py-4 text-neutral-300">
+                      {activeAssignmentCountByClient.get(client.id) ?? 0}
+                    </td>
+
+                    <td className="max-w-[320px] px-3 py-4 text-neutral-400">
+                      {client.notes || "—"}
+                    </td>
+
+                    <td className="px-3 py-4 text-neutral-400">
+                      {formatDate(client.updated_at)}
+                    </td>
+                  </tr>
+                ))}
+
+                {clients.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      className="px-3 py-8 text-center text-neutral-500"
+                    >
+                      No client records were found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+export default function ClientsPage(props: ClientsPageProps) {
+  return (
+    <Suspense fallback={<ClientsLoading />}>
+      <ClientsContent {...props} />
+    </Suspense>
+  );
+}
