@@ -8,12 +8,20 @@ type ClientsPageProps = {
   searchParams: Promise<{
     message?: string;
     error?: string;
+    client_q?: string;
+    client_status?: string;
+    project_q?: string;
+    project_status?: string;
+    dashboard?: string;
   }>;
 };
 
 type ClientStatus = "active" | "inactive" | "cancelled";
 type ProjectStatus = "active" | "inactive" | "cancelled";
 type AssignmentStatus = "active" | "inactive";
+type ClientStatusFilter = "all" | ClientStatus;
+type ProjectStatusFilter = "all" | ProjectStatus;
+type DashboardFilter = "all" | "included" | "hidden";
 
 type ClientRow = {
   id: string;
@@ -82,6 +90,50 @@ function projectStatusClass(status: ProjectStatus): string {
     default:
       return "border-neutral-700 bg-neutral-800 text-neutral-300";
   }
+}
+
+function normalizeSearch(value: string | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function getClientStatusFilter(value: string | undefined): ClientStatusFilter {
+  if (value === "active" || value === "inactive" || value === "cancelled") {
+    return value;
+  }
+
+  return "all";
+}
+
+function getProjectStatusFilter(value: string | undefined): ProjectStatusFilter {
+  if (value === "active" || value === "inactive" || value === "cancelled") {
+    return value;
+  }
+
+  return "all";
+}
+
+function getDashboardFilter(value: string | undefined): DashboardFilter {
+  if (value === "included" || value === "hidden") {
+    return value;
+  }
+
+  return "all";
+}
+
+function buildClientsHref(
+  parameters: Record<string, string | undefined>,
+): string {
+  const search = new URLSearchParams();
+
+  Object.entries(parameters).forEach(([key, value]) => {
+    if (value) {
+      search.set(key, value);
+    }
+  });
+
+  const query = search.toString();
+
+  return query ? `/dashboard/clients?${query}` : "/dashboard/clients";
 }
 
 function ClientsLoading() {
@@ -181,6 +233,72 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
       (activeAssignmentCountByClient.get(project.client_id) ?? 0) + 1,
     );
   });
+
+  const clientSearch = normalizeSearch(parameters.client_q);
+  const clientStatusFilter = getClientStatusFilter(parameters.client_status);
+  const projectSearch = normalizeSearch(parameters.project_q);
+  const projectStatusFilter = getProjectStatusFilter(parameters.project_status);
+  const dashboardFilter = getDashboardFilter(parameters.dashboard);
+
+  const filteredClients = clients.filter((client) => {
+    const matchesSearch =
+      !clientSearch ||
+      [client.client_code, client.client_name, client.notes ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(clientSearch);
+
+    const matchesStatus =
+      clientStatusFilter === "all" || client.status === clientStatusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
+
+  const filteredProjects = projects.filter((project) => {
+    const client = clientById.get(project.client_id);
+    const matchesSearch =
+      !projectSearch ||
+      [
+        project.external_project_id,
+        project.project_name,
+        project.task_id_prefix ?? "",
+        project.notes ?? "",
+        client?.client_code ?? "",
+        client?.client_name ?? "",
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(projectSearch);
+
+    const matchesStatus =
+      projectStatusFilter === "all" || project.status === projectStatusFilter;
+
+    const matchesDashboard =
+      dashboardFilter === "all" ||
+      (dashboardFilter === "included" && project.include_in_dashboard) ||
+      (dashboardFilter === "hidden" && !project.include_in_dashboard);
+
+    return matchesSearch && matchesStatus && matchesDashboard;
+  });
+
+  const clearClientFiltersHref = buildClientsHref({
+    project_q: parameters.project_q,
+    project_status: parameters.project_status,
+    dashboard: parameters.dashboard,
+  });
+
+  const clearProjectFiltersHref = buildClientsHref({
+    client_q: parameters.client_q,
+    client_status: parameters.client_status,
+  });
+
+  const hasAnyFilters = Boolean(
+    clientSearch ||
+      clientStatusFilter !== "all" ||
+      projectSearch ||
+      projectStatusFilter !== "all" ||
+      dashboardFilter !== "all",
+  );
 
   return (
     <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">
@@ -324,14 +442,90 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
         </section>
 
         <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
-          <div>
-            <h2 className="text-xl font-bold">Clients</h2>
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Clients</h2>
 
-            <p className="mt-2 text-sm text-neutral-400">
-              Update client name, status, or notes directly from the table.
-              Client IDs remain fixed after creation.
-            </p>
+              <p className="mt-2 text-sm text-neutral-400">
+                Update client name, status, or notes directly from the table.
+                Client IDs remain fixed after creation.
+              </p>
+
+              <p className="mt-2 text-xs text-neutral-500">
+                Showing {filteredClients.length} of {clients.length} clients.
+              </p>
+            </div>
+
+            <form
+              action="/dashboard/clients"
+              method="get"
+              className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_170px_auto_auto] sm:items-end"
+            >
+              {parameters.project_q && (
+                <input type="hidden" name="project_q" value={parameters.project_q} />
+              )}
+              {parameters.project_status && (
+                <input
+                  type="hidden"
+                  name="project_status"
+                  value={parameters.project_status}
+                />
+              )}
+              {parameters.dashboard && (
+                <input type="hidden" name="dashboard" value={parameters.dashboard} />
+              )}
+
+              <label className="block text-sm font-medium">
+                Search clients
+                <input
+                  name="client_q"
+                  defaultValue={parameters.client_q ?? ""}
+                  placeholder="ID, name, or notes"
+                  autoComplete="off"
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-[#fd961b]"
+                />
+              </label>
+
+              <label className="block text-sm font-medium">
+                Client status
+                <select
+                  name="client_status"
+                  defaultValue={clientStatusFilter}
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-[#fd961b]"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </label>
+
+              <button
+                type="submit"
+                className="rounded-md bg-[#fd961b] px-4 py-2 font-semibold text-black transition hover:bg-orange-400"
+              >
+                Apply
+              </button>
+
+              <Link
+                href={clearClientFiltersHref}
+                className="rounded-md border border-neutral-700 px-4 py-2 text-center font-semibold transition hover:border-[#fd961b] hover:text-[#fd961b]"
+              >
+                Clear
+              </Link>
+            </form>
           </div>
+
+          {hasAnyFilters && (
+            <div className="mt-4 flex justify-end">
+              <Link
+                href="/dashboard/clients"
+                className="text-xs font-semibold text-neutral-400 hover:text-[#fd961b]"
+              >
+                Clear all filters
+              </Link>
+            </div>
+          )}
 
           <div className="mt-5 overflow-x-auto">
             <table className="w-full min-w-[1420px] text-left text-sm">
@@ -350,7 +544,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
               </thead>
 
               <tbody>
-                {clients.map((client) => {
+                {filteredClients.map((client) => {
                   const formId = `client-update-${client.id}`;
 
                   return (
@@ -452,13 +646,15 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                   );
                 })}
 
-                {clients.length === 0 && (
+                {filteredClients.length === 0 && (
                   <tr>
                     <td
                       colSpan={9}
                       className="px-3 py-8 text-center text-neutral-500"
                     >
-                      No client records were found.
+                      {clients.length === 0
+                        ? "No client records were found."
+                        : "No clients match the current search or status filter."}
                     </td>
                   </tr>
                 )}
@@ -589,13 +785,88 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
         </section>
 
         <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
-          <div>
-            <h2 className="text-xl font-bold">Projects</h2>
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Projects</h2>
 
-            <p className="mt-2 text-sm text-neutral-400">
-              Project/client relationships and external Project IDs remain
-              fixed after creation. Project details may be updated here.
-            </p>
+              <p className="mt-2 text-sm text-neutral-400">
+                Project/client relationships and external Project IDs remain
+                fixed after creation. Project details may be updated here.
+              </p>
+
+              <p className="mt-2 text-xs text-neutral-500">
+                Showing {filteredProjects.length} of {projects.length} projects.
+              </p>
+            </div>
+
+            <form
+              action="/dashboard/clients"
+              method="get"
+              className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_160px_160px_auto_auto] xl:items-end"
+            >
+              {parameters.client_q && (
+                <input type="hidden" name="client_q" value={parameters.client_q} />
+              )}
+              {parameters.client_status && (
+                <input
+                  type="hidden"
+                  name="client_status"
+                  value={parameters.client_status}
+                />
+              )}
+
+              <label className="block text-sm font-medium">
+                Search projects
+                <input
+                  name="project_q"
+                  defaultValue={parameters.project_q ?? ""}
+                  placeholder="Project, prefix, client, or notes"
+                  autoComplete="off"
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-[#fd961b]"
+                />
+              </label>
+
+              <label className="block text-sm font-medium">
+                Project status
+                <select
+                  name="project_status"
+                  defaultValue={projectStatusFilter}
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-[#fd961b]"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </label>
+
+              <label className="block text-sm font-medium">
+                Dashboard
+                <select
+                  name="dashboard"
+                  defaultValue={dashboardFilter}
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-[#fd961b]"
+                >
+                  <option value="all">All projects</option>
+                  <option value="included">Included</option>
+                  <option value="hidden">Hidden</option>
+                </select>
+              </label>
+
+              <button
+                type="submit"
+                className="rounded-md bg-[#fd961b] px-4 py-2 font-semibold text-black transition hover:bg-orange-400"
+              >
+                Apply
+              </button>
+
+              <Link
+                href={clearProjectFiltersHref}
+                className="rounded-md border border-neutral-700 px-4 py-2 text-center font-semibold transition hover:border-[#fd961b] hover:text-[#fd961b]"
+              >
+                Clear
+              </Link>
+            </form>
           </div>
 
           <div className="mt-5 overflow-x-auto">
@@ -616,7 +887,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
               </thead>
 
               <tbody>
-                {projects.map((project) => {
+                {filteredProjects.map((project) => {
                   const formId = `project-update-${project.id}`;
                   const client = clientById.get(project.client_id);
 
@@ -746,13 +1017,15 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                   );
                 })}
 
-                {projects.length === 0 && (
+                {filteredProjects.length === 0 && (
                   <tr>
                     <td
                       colSpan={10}
                       className="px-3 py-8 text-center text-neutral-500"
                     >
-                      No project records were found.
+                      {projects.length === 0
+                        ? "No project records were found."
+                        : "No projects match the current search or filters."}
                     </td>
                   </tr>
                 )}
