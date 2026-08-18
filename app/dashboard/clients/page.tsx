@@ -179,9 +179,8 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
             <h1 className="mt-2 text-3xl font-bold">Client Management</h1>
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
-              Review client records, project coverage, and active Agent
-              assignments. Client and project editing controls will be added in
-              the next Phase 4 steps.
+              Create and maintain client records while reviewing project
+              coverage and active Agent assignments.
             </p>
           </div>
 
@@ -230,15 +229,90 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
         </section>
 
         <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
+          <h2 className="text-xl font-bold">Create a client</h2>
+
+          <p className="mt-2 text-sm text-neutral-400">
+            Client IDs are permanent once created. Use the legacy format such
+            as CL-001 when applicable.
+          </p>
+
+          <form
+            action="/dashboard/clients/manage"
+            method="post"
+            className="mt-6 grid gap-4 xl:grid-cols-[170px_1fr_180px_1fr_auto] xl:items-end"
+          >
+            <input type="hidden" name="action" value="create" />
+
+            <label className="block text-sm font-medium">
+              Client ID
+              <input
+                name="client_code"
+                required
+                minLength={2}
+                maxLength={40}
+                placeholder="CL-001"
+                autoComplete="off"
+                className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-3 uppercase outline-none focus:border-[#fd961b]"
+              />
+            </label>
+
+            <label className="block text-sm font-medium">
+              Client name
+              <input
+                name="client_name"
+                required
+                minLength={2}
+                maxLength={160}
+                autoComplete="off"
+                className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-3 outline-none focus:border-[#fd961b]"
+              />
+            </label>
+
+            <label className="block text-sm font-medium">
+              Status
+              <select
+                name="status"
+                defaultValue="active"
+                className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-3 outline-none focus:border-[#fd961b]"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </label>
+
+            <label className="block text-sm font-medium">
+              Notes
+              <input
+                name="notes"
+                maxLength={2000}
+                autoComplete="off"
+                placeholder="Optional"
+                className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-3 outline-none focus:border-[#fd961b]"
+              />
+            </label>
+
+            <button
+              type="submit"
+              className="rounded-md bg-[#fd961b] px-5 py-3 font-semibold text-black transition hover:bg-orange-400"
+            >
+              Create client
+            </button>
+          </form>
+        </section>
+
+        <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
           <div>
             <h2 className="text-xl font-bold">Clients</h2>
+
             <p className="mt-2 text-sm text-neutral-400">
-              Current client records with project and active assignment totals.
+              Update client name, status, or notes directly from the table.
+              Client IDs remain fixed after creation.
             </p>
           </div>
 
           <div className="mt-5 overflow-x-auto">
-            <table className="w-full min-w-[1180px] text-left text-sm">
+            <table className="w-full min-w-[1420px] text-left text-sm">
               <thead className="border-b border-neutral-800 text-neutral-400">
                 <tr>
                   <th className="px-3 py-3 font-medium">Client ID</th>
@@ -249,59 +323,117 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                   <th className="px-3 py-3 font-medium">Active assignments</th>
                   <th className="px-3 py-3 font-medium">Notes</th>
                   <th className="px-3 py-3 font-medium">Updated</th>
+                  <th className="px-3 py-3 font-medium">Action</th>
                 </tr>
               </thead>
 
               <tbody>
-                {clients.map((client) => (
-                  <tr
-                    key={client.id}
-                    className="border-b border-neutral-800/70"
-                  >
-                    <td className="px-3 py-4 font-medium text-[#fd961b]">
-                      {client.client_code}
-                    </td>
+                {clients.map((client) => {
+                  const formId = `client-update-${client.id}`;
 
-                    <td className="px-3 py-4 font-medium">
-                      {client.client_name}
-                    </td>
+                  return (
+                    <tr
+                      key={client.id}
+                      className="border-b border-neutral-800/70 align-top"
+                    >
+                      <td className="px-3 py-4 font-medium text-[#fd961b]">
+                        {client.client_code}
+                      </td>
 
-                    <td className="px-3 py-4">
-                      <span
-                        className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(
-                          client.status,
-                        )}`}
-                      >
-                        {formatLabel(client.status)}
-                      </span>
-                    </td>
+                      <td className="px-3 py-4">
+                        <input
+                          form={formId}
+                          name="client_name"
+                          required
+                          minLength={2}
+                          maxLength={160}
+                          defaultValue={client.client_name}
+                          aria-label={`Client name for ${client.client_code}`}
+                          className="w-full min-w-[220px] rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-[#fd961b]"
+                        />
+                      </td>
 
-                    <td className="px-3 py-4 text-neutral-300">
-                      {projectCountByClient.get(client.id) ?? 0}
-                    </td>
+                      <td className="px-3 py-4">
+                        <select
+                          form={formId}
+                          name="status"
+                          defaultValue={client.status}
+                          aria-label={`Status for ${client.client_code}`}
+                          className="min-w-[130px] rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-[#fd961b]"
+                        >
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                          <option value="cancelled">Cancelled</option>
+                        </select>
 
-                    <td className="px-3 py-4 text-neutral-300">
-                      {activeProjectCountByClient.get(client.id) ?? 0}
-                    </td>
+                        <div className="mt-2">
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(
+                              client.status,
+                            )}`}
+                          >
+                            Current: {formatLabel(client.status)}
+                          </span>
+                        </div>
+                      </td>
 
-                    <td className="px-3 py-4 text-neutral-300">
-                      {activeAssignmentCountByClient.get(client.id) ?? 0}
-                    </td>
+                      <td className="px-3 py-4 text-neutral-300">
+                        {projectCountByClient.get(client.id) ?? 0}
+                      </td>
 
-                    <td className="max-w-[320px] px-3 py-4 text-neutral-400">
-                      {client.notes || "—"}
-                    </td>
+                      <td className="px-3 py-4 text-neutral-300">
+                        {activeProjectCountByClient.get(client.id) ?? 0}
+                      </td>
 
-                    <td className="px-3 py-4 text-neutral-400">
-                      {formatDate(client.updated_at)}
-                    </td>
-                  </tr>
-                ))}
+                      <td className="px-3 py-4 text-neutral-300">
+                        {activeAssignmentCountByClient.get(client.id) ?? 0}
+                      </td>
+
+                      <td className="px-3 py-4">
+                        <textarea
+                          form={formId}
+                          name="notes"
+                          maxLength={2000}
+                          defaultValue={client.notes ?? ""}
+                          aria-label={`Notes for ${client.client_code}`}
+                          rows={2}
+                          className="w-full min-w-[260px] resize-y rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-[#fd961b]"
+                        />
+                      </td>
+
+                      <td className="px-3 py-4 text-neutral-400">
+                        {formatDate(client.updated_at)}
+                      </td>
+
+                      <td className="px-3 py-4">
+                        <form
+                          id={formId}
+                          action="/dashboard/clients/manage"
+                          method="post"
+                        >
+                          <input type="hidden" name="action" value="update" />
+                          <input
+                            type="hidden"
+                            name="client_id"
+                            value={client.id}
+                          />
+
+                          <button
+                            type="submit"
+                            className="rounded-md border border-neutral-700 px-4 py-2 text-xs font-semibold transition hover:border-[#fd961b] hover:text-[#fd961b]"
+                          >
+                            Save
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  );
+                })}
 
                 {clients.length === 0 && (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="px-3 py-8 text-center text-neutral-500"
                     >
                       No client records were found.
