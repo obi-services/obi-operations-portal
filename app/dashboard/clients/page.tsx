@@ -33,6 +33,7 @@ type ProjectRow = {
   task_id_prefix: string | null;
   status: ProjectStatus;
   include_in_dashboard: boolean;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -61,7 +62,18 @@ function formatLabel(value: string): string {
     .join(" ");
 }
 
-function statusClass(status: ClientStatus): string {
+function clientStatusClass(status: ClientStatus): string {
+  switch (status) {
+    case "active":
+      return "border-green-900 bg-green-950/40 text-green-300";
+    case "cancelled":
+      return "border-red-900 bg-red-950/40 text-red-300";
+    default:
+      return "border-neutral-700 bg-neutral-800 text-neutral-300";
+  }
+}
+
+function projectStatusClass(status: ProjectStatus): string {
   switch (status) {
     case "active":
       return "border-green-900 bg-green-950/40 text-green-300";
@@ -98,7 +110,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
     supabase
       .from("projects")
       .select(
-        "id, client_id, external_project_id, project_name, task_id_prefix, status, include_in_dashboard, created_at, updated_at",
+        "id, client_id, external_project_id, project_name, task_id_prefix, status, include_in_dashboard, notes, created_at, updated_at",
       )
       .order("created_at", { ascending: true }),
     supabase
@@ -125,6 +137,10 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
     (project) => project.status === "active",
   ).length;
 
+  const clientById = new Map(
+    clients.map((client) => [client.id, client]),
+  );
+
   const projectById = new Map(
     projects.map((project) => [project.id, project]),
   );
@@ -132,6 +148,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
   const projectCountByClient = new Map<string, number>();
   const activeProjectCountByClient = new Map<string, number>();
   const activeAssignmentCountByClient = new Map<string, number>();
+  const activeAssignmentCountByProject = new Map<string, number>();
 
   projects.forEach((project) => {
     projectCountByClient.set(
@@ -149,6 +166,11 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
 
   activeAssignments.forEach((assignment) => {
     const project = projectById.get(assignment.project_id);
+
+    activeAssignmentCountByProject.set(
+      assignment.project_id,
+      (activeAssignmentCountByProject.get(assignment.project_id) ?? 0) + 1,
+    );
 
     if (!project) {
       return;
@@ -179,8 +201,8 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
             <h1 className="mt-2 text-3xl font-bold">Client Management</h1>
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
-              Create and maintain client records while reviewing project
-              coverage and active Agent assignments.
+              Create and maintain client and project records while reviewing
+              active Agent assignments.
             </p>
           </div>
 
@@ -368,7 +390,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
 
                         <div className="mt-2">
                           <span
-                            className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(
+                            className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${clientStatusClass(
                               client.status,
                             )}`}
                           >
@@ -437,6 +459,300 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                       className="px-3 py-8 text-center text-neutral-500"
                     >
                       No client records were found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
+          <h2 className="text-xl font-bold">Create a project</h2>
+
+          <p className="mt-2 text-sm text-neutral-400">
+            Project IDs are permanent once created. Active projects require an
+            active client.
+          </p>
+
+          {clients.length === 0 ? (
+            <div className="mt-6 rounded-lg border border-neutral-800 bg-neutral-950 px-4 py-4 text-sm text-neutral-400">
+              Create a client before adding a project.
+            </div>
+          ) : (
+            <form
+              action="/dashboard/clients/projects/manage"
+              method="post"
+              className="mt-6 grid gap-4 xl:grid-cols-4"
+            >
+              <input type="hidden" name="action" value="create" />
+
+              <label className="block text-sm font-medium">
+                Client
+                <select
+                  name="client_id"
+                  required
+                  defaultValue=""
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-3 outline-none focus:border-[#fd961b]"
+                >
+                  <option value="" disabled>
+                    Select client
+                  </option>
+
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.client_code} · {client.client_name} ·{" "}
+                      {formatLabel(client.status)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-sm font-medium">
+                External Project ID
+                <input
+                  name="external_project_id"
+                  required
+                  minLength={1}
+                  maxLength={160}
+                  autoComplete="off"
+                  placeholder="Source project ID"
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-3 outline-none focus:border-[#fd961b]"
+                />
+              </label>
+
+              <label className="block text-sm font-medium">
+                Project name
+                <input
+                  name="project_name"
+                  required
+                  minLength={2}
+                  maxLength={160}
+                  autoComplete="off"
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-3 outline-none focus:border-[#fd961b]"
+                />
+              </label>
+
+              <label className="block text-sm font-medium">
+                Task ID Prefix
+                <input
+                  name="task_id_prefix"
+                  maxLength={40}
+                  autoComplete="off"
+                  placeholder="Optional"
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-3 uppercase outline-none focus:border-[#fd961b]"
+                />
+              </label>
+
+              <label className="block text-sm font-medium">
+                Status
+                <select
+                  name="status"
+                  defaultValue="active"
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-3 outline-none focus:border-[#fd961b]"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </label>
+
+              <label className="block text-sm font-medium">
+                Notes
+                <input
+                  name="notes"
+                  maxLength={2000}
+                  autoComplete="off"
+                  placeholder="Optional"
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-3 outline-none focus:border-[#fd961b]"
+                />
+              </label>
+
+              <label className="flex items-center gap-3 rounded-md border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm font-medium xl:self-end">
+                <input
+                  name="include_in_dashboard"
+                  type="checkbox"
+                  defaultChecked
+                  className="h-4 w-4 accent-[#fd961b]"
+                />
+                Include in dashboard
+              </label>
+
+              <button
+                type="submit"
+                className="rounded-md bg-[#fd961b] px-5 py-3 font-semibold text-black transition hover:bg-orange-400 xl:self-end"
+              >
+                Create project
+              </button>
+            </form>
+          )}
+        </section>
+
+        <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
+          <div>
+            <h2 className="text-xl font-bold">Projects</h2>
+
+            <p className="mt-2 text-sm text-neutral-400">
+              Project/client relationships and external Project IDs remain
+              fixed after creation. Project details may be updated here.
+            </p>
+          </div>
+
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[1840px] text-left text-sm">
+              <thead className="border-b border-neutral-800 text-neutral-400">
+                <tr>
+                  <th className="px-3 py-3 font-medium">Client</th>
+                  <th className="px-3 py-3 font-medium">External Project ID</th>
+                  <th className="px-3 py-3 font-medium">Project name</th>
+                  <th className="px-3 py-3 font-medium">Task prefix</th>
+                  <th className="px-3 py-3 font-medium">Status</th>
+                  <th className="px-3 py-3 font-medium">Dashboard</th>
+                  <th className="px-3 py-3 font-medium">Active assignments</th>
+                  <th className="px-3 py-3 font-medium">Notes</th>
+                  <th className="px-3 py-3 font-medium">Updated</th>
+                  <th className="px-3 py-3 font-medium">Action</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {projects.map((project) => {
+                  const formId = `project-update-${project.id}`;
+                  const client = clientById.get(project.client_id);
+
+                  return (
+                    <tr
+                      key={project.id}
+                      className="border-b border-neutral-800/70 align-top"
+                    >
+                      <td className="px-3 py-4">
+                        <p className="font-medium">
+                          {client?.client_code ?? "Unknown"}
+                        </p>
+                        <p className="mt-1 min-w-[180px] text-xs text-neutral-500">
+                          {client?.client_name ?? "Client record unavailable"}
+                        </p>
+                      </td>
+
+                      <td className="px-3 py-4 font-medium text-[#fd961b]">
+                        {project.external_project_id}
+                      </td>
+
+                      <td className="px-3 py-4">
+                        <input
+                          form={formId}
+                          name="project_name"
+                          required
+                          minLength={2}
+                          maxLength={160}
+                          defaultValue={project.project_name}
+                          aria-label={`Project name for ${project.external_project_id}`}
+                          className="w-full min-w-[220px] rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-[#fd961b]"
+                        />
+                      </td>
+
+                      <td className="px-3 py-4">
+                        <input
+                          form={formId}
+                          name="task_id_prefix"
+                          maxLength={40}
+                          defaultValue={project.task_id_prefix ?? ""}
+                          aria-label={`Task ID prefix for ${project.external_project_id}`}
+                          className="w-full min-w-[110px] rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 uppercase outline-none focus:border-[#fd961b]"
+                        />
+                      </td>
+
+                      <td className="px-3 py-4">
+                        <select
+                          form={formId}
+                          name="status"
+                          defaultValue={project.status}
+                          aria-label={`Status for ${project.external_project_id}`}
+                          className="min-w-[130px] rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-[#fd961b]"
+                        >
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                          <option value="cancelled">Cancelled</option>
+                        </select>
+
+                        <div className="mt-2">
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${projectStatusClass(
+                              project.status,
+                            )}`}
+                          >
+                            Current: {formatLabel(project.status)}
+                          </span>
+                        </div>
+                      </td>
+
+                      <td className="px-3 py-4">
+                        <label className="flex min-w-[120px] items-center gap-2">
+                          <input
+                            form={formId}
+                            name="include_in_dashboard"
+                            type="checkbox"
+                            defaultChecked={project.include_in_dashboard}
+                            className="h-4 w-4 accent-[#fd961b]"
+                          />
+                          <span className="text-neutral-300">
+                            {project.include_in_dashboard ? "Included" : "Hidden"}
+                          </span>
+                        </label>
+                      </td>
+
+                      <td className="px-3 py-4 text-neutral-300">
+                        {activeAssignmentCountByProject.get(project.id) ?? 0}
+                      </td>
+
+                      <td className="px-3 py-4">
+                        <textarea
+                          form={formId}
+                          name="notes"
+                          maxLength={2000}
+                          defaultValue={project.notes ?? ""}
+                          aria-label={`Notes for ${project.external_project_id}`}
+                          rows={2}
+                          className="w-full min-w-[260px] resize-y rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-[#fd961b]"
+                        />
+                      </td>
+
+                      <td className="px-3 py-4 text-neutral-400">
+                        {formatDate(project.updated_at)}
+                      </td>
+
+                      <td className="px-3 py-4">
+                        <form
+                          id={formId}
+                          action="/dashboard/clients/projects/manage"
+                          method="post"
+                        >
+                          <input type="hidden" name="action" value="update" />
+                          <input
+                            type="hidden"
+                            name="project_id"
+                            value={project.id}
+                          />
+
+                          <button
+                            type="submit"
+                            className="rounded-md border border-neutral-700 px-4 py-2 text-xs font-semibold transition hover:border-[#fd961b] hover:text-[#fd961b]"
+                          >
+                            Save
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {projects.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={10}
+                      className="px-3 py-8 text-center text-neutral-500"
+                    >
+                      No project records were found.
                     </td>
                   </tr>
                 )}
