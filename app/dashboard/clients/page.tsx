@@ -448,7 +448,8 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
 
               <p className="mt-2 text-sm text-neutral-400">
                 Update client name, status, or notes directly from the table.
-                Client IDs remain fixed after creation.
+                Client IDs remain fixed after creation. Open a Client ID or
+                select View to inspect its full client record.
               </p>
 
               <p className="mt-2 text-xs text-neutral-500">
@@ -552,8 +553,15 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                       key={client.id}
                       className="border-b border-neutral-800/70 align-top"
                     >
-                      <td className="px-3 py-4 font-medium text-[#fd961b]">
-                        {client.client_code}
+                      <td className="px-3 py-4 font-medium">
+                        <Link
+                          href={`/dashboard/clients/${encodeURIComponent(
+                            client.client_code,
+                          )}`}
+                          className="text-[#fd961b] hover:underline"
+                        >
+                          {client.client_code}
+                        </Link>
                       </td>
 
                       <td className="px-3 py-4">
@@ -622,25 +630,36 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                       </td>
 
                       <td className="px-3 py-4">
-                        <form
-                          id={formId}
-                          action="/dashboard/clients/manage"
-                          method="post"
-                        >
-                          <input type="hidden" name="action" value="update" />
-                          <input
-                            type="hidden"
-                            name="client_id"
-                            value={client.id}
-                          />
-
-                          <button
-                            type="submit"
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/dashboard/clients/${encodeURIComponent(
+                              client.client_code,
+                            )}`}
                             className="rounded-md border border-neutral-700 px-4 py-2 text-xs font-semibold transition hover:border-[#fd961b] hover:text-[#fd961b]"
                           >
-                            Save
-                          </button>
-                        </form>
+                            View
+                          </Link>
+
+                          <form
+                            id={formId}
+                            action="/dashboard/clients/manage"
+                            method="post"
+                          >
+                            <input type="hidden" name="action" value="update" />
+                            <input
+                              type="hidden"
+                              name="client_id"
+                              value={client.id}
+                            />
+
+                            <button
+                              type="submit"
+                              className="rounded-md border border-neutral-700 px-4 py-2 text-xs font-semibold transition hover:border-[#fd961b] hover:text-[#fd961b]"
+                            >
+                              Save
+                            </button>
+                          </form>
+                        </div>
                       </td>
                     </tr>
                   );
