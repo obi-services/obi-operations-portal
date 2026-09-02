@@ -200,11 +200,20 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
       )
       .order("created_at", { ascending: true }),
     supabase
-      .from("project_assignments")
-      .select(
-        "id, project_id, agent_user_id, status, profiles(email, full_name)",
-      )
-      .eq("status", "active"),
+  .from("project_assignments")
+  .select(
+    `
+    id,
+    project_id,
+    agent_user_id,
+    status,
+    profiles!project_assignments_agent_user_id_fkey(
+      email,
+      full_name
+    )
+    `,
+  )
+  .eq("status", "active"),
     supabase
       .from("profiles")
       .select("id, email, full_name, role, status")
