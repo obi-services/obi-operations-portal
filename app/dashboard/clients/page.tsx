@@ -46,10 +46,25 @@ type ProjectRow = {
   updated_at: string;
 };
 
+type AssignmentProfile = {
+  email: string;
+  full_name: string;
+};
+
 type AssignmentRow = {
   id: string;
   project_id: string;
+  agent_user_id: string;
   status: AssignmentStatus;
+  profiles: AssignmentProfile | AssignmentProfile[] | null;
+};
+
+type AgentRow = {
+  id: string;
+  email: string;
+  full_name: string;
+  role: "agent";
+  status: "active";
 };
 
 function formatDate(value: string): string {
@@ -90,6 +105,20 @@ function projectStatusClass(status: ProjectStatus): string {
     default:
       return "border-neutral-700 bg-neutral-800 text-neutral-300";
   }
+}
+
+function getAssignmentProfile(
+  assignment: AssignmentRow,
+): AssignmentProfile | null {
+  if (!assignment.profiles) {
+    return null;
+  }
+
+  if (Array.isArray(assignment.profiles)) {
+    return assignment.profiles[0] ?? null;
+  }
+
+  return assignment.profiles;
 }
 
 function normalizeSearch(value: string | undefined): string {
@@ -152,7 +181,12 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
 
   const supabase = await createClient();
 
-  const [clientsResult, projectsResult, assignmentsResult] = await Promise.all([
+  const [
+    clientsResult,
+    projectsResult,
+    assignmentsResult,
+    agentsResult,
+  ] = await Promise.all([
     supabase
       .from("clients")
       .select(
@@ -167,18 +201,28 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
       .order("created_at", { ascending: true }),
     supabase
       .from("project_assignments")
-      .select("id, project_id, status")
+      .select(
+        "id, project_id, agent_user_id, status, profiles(email, full_name)",
+      )
       .eq("status", "active"),
+    supabase
+      .from("profiles")
+      .select("id, email, full_name, role, status")
+      .eq("role", "agent")
+      .eq("status", "active")
+      .order("full_name", { ascending: true }),
   ]);
 
   const clients = (clientsResult.data ?? []) as ClientRow[];
   const projects = (projectsResult.data ?? []) as ProjectRow[];
   const activeAssignments = (assignmentsResult.data ?? []) as AssignmentRow[];
+  const activeAgents = (agentsResult.data ?? []) as AgentRow[];
 
   const loadError =
     clientsResult.error?.message ??
     projectsResult.error?.message ??
     assignmentsResult.error?.message ??
+    agentsResult.error?.message ??
     "";
 
   const activeClientCount = clients.filter(
@@ -200,7 +244,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
   const projectCountByClient = new Map<string, number>();
   const activeProjectCountByClient = new Map<string, number>();
   const activeAssignmentCountByClient = new Map<string, number>();
-  const activeAssignmentCountByProject = new Map<string, number>();
+  const activeAssignmentsByProject = new Map<string, AssignmentRow[]>();
 
   projects.forEach((project) => {
     projectCountByClient.set(
@@ -218,10 +262,13 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
 
   activeAssignments.forEach((assignment) => {
     const project = projectById.get(assignment.project_id);
+    const projectAssignments =
+      activeAssignmentsByProject.get(assignment.project_id) ?? [];
 
-    activeAssignmentCountByProject.set(
+    projectAssignments.push(assignment);
+    activeAssignmentsByProject.set(
       assignment.project_id,
-      (activeAssignmentCountByProject.get(assignment.project_id) ?? 0) + 1,
+      projectAssignments,
     );
 
     if (!project) {
@@ -256,6 +303,20 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
 
   const filteredProjects = projects.filter((project) => {
     const client = clientById.get(project.client_id);
+    const projectAssignments =
+      activeAssignmentsByProject.get(project.id) ?? [];
+
+    const assignedAgentSearchText = projectAssignments
+      .map((assignment) => {
+        const assignmentProfile = getAssignmentProfile(assignment);
+
+        return [
+          assignmentProfile?.full_name ?? "",
+          assignmentProfile?.email ?? "",
+        ].join(" ");
+      })
+      .join(" ");
+
     const matchesSearch =
       !projectSearch ||
       [
@@ -265,6 +326,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
         project.notes ?? "",
         client?.client_code ?? "",
         client?.client_name ?? "",
+        assignedAgentSearchText,
       ]
         .join(" ")
         .toLowerCase()
@@ -279,6 +341,12 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
       (dashboardFilter === "hidden" && !project.include_in_dashboard);
 
     return matchesSearch && matchesStatus && matchesDashboard;
+  });
+
+  const assignableProjects = projects.filter((project) => {
+    const client = clientById.get(project.client_id);
+
+    return project.status === "active" && client?.status === "active";
   });
 
   const clearClientFiltersHref = buildClientsHref({
@@ -463,8 +531,13 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
               className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_170px_auto_auto] sm:items-end"
             >
               {parameters.project_q && (
-                <input type="hidden" name="project_q" value={parameters.project_q} />
+                <input
+                  type="hidden"
+                  name="project_q"
+                  value={parameters.project_q}
+                />
               )}
+
               {parameters.project_status && (
                 <input
                   type="hidden"
@@ -472,8 +545,13 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                   value={parameters.project_status}
                 />
               )}
+
               {parameters.dashboard && (
-                <input type="hidden" name="dashboard" value={parameters.dashboard} />
+                <input
+                  type="hidden"
+                  name="dashboard"
+                  value={parameters.dashboard}
+                />
               )}
 
               <label className="block text-sm font-medium">
@@ -537,7 +615,9 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                   <th className="px-3 py-3 font-medium">Status</th>
                   <th className="px-3 py-3 font-medium">Projects</th>
                   <th className="px-3 py-3 font-medium">Active projects</th>
-                  <th className="px-3 py-3 font-medium">Active assignments</th>
+                  <th className="px-3 py-3 font-medium">
+                    Active assignments
+                  </th>
                   <th className="px-3 py-3 font-medium">Notes</th>
                   <th className="px-3 py-3 font-medium">Updated</th>
                   <th className="px-3 py-3 font-medium">Action</th>
@@ -645,7 +725,12 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                             action="/dashboard/clients/manage"
                             method="post"
                           >
-                            <input type="hidden" name="action" value="update" />
+                            <input
+                              type="hidden"
+                              name="action"
+                              value="update"
+                            />
+
                             <input
                               type="hidden"
                               name="client_id"
@@ -680,6 +765,97 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
+          <h2 className="text-xl font-bold">Assign Agent to Project</h2>
+
+          <p className="mt-2 text-sm text-neutral-400">
+            Assign an active Agent to an active Project. Assignment history is
+            preserved when an Agent is removed later.
+          </p>
+
+          {activeAgents.length === 0 ? (
+            <div className="mt-6 rounded-lg border border-neutral-800 bg-neutral-950 px-4 py-4 text-sm text-neutral-400">
+              No active Agent accounts are currently available.
+            </div>
+          ) : assignableProjects.length === 0 ? (
+            <div className="mt-6 rounded-lg border border-neutral-800 bg-neutral-950 px-4 py-4 text-sm text-neutral-400">
+              No active Projects belonging to active Clients are currently
+              available.
+            </div>
+          ) : (
+            <form
+              action="/dashboard/clients/assignments/manage"
+              method="post"
+              className="mt-6 grid gap-4 xl:grid-cols-[1fr_1fr_1fr_auto] xl:items-end"
+            >
+              <input type="hidden" name="action" value="assign" />
+
+              <label className="block text-sm font-medium">
+                Project
+                <select
+                  name="project_id"
+                  required
+                  defaultValue=""
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-3 outline-none focus:border-[#fd961b]"
+                >
+                  <option value="" disabled>
+                    Select project
+                  </option>
+
+                  {assignableProjects.map((project) => {
+                    const client = clientById.get(project.client_id);
+
+                    return (
+                      <option key={project.id} value={project.id}>
+                        {project.external_project_id} · {project.project_name} ·{" "}
+                        {client?.client_code ?? "Unknown Client"}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+
+              <label className="block text-sm font-medium">
+                Agent
+                <select
+                  name="agent_user_id"
+                  required
+                  defaultValue=""
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-3 outline-none focus:border-[#fd961b]"
+                >
+                  <option value="" disabled>
+                    Select Agent
+                  </option>
+
+                  {activeAgents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.full_name || agent.email} · {agent.email}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-sm font-medium">
+                Assignment notes
+                <input
+                  name="notes"
+                  maxLength={2000}
+                  autoComplete="off"
+                  placeholder="Optional"
+                  className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-3 outline-none focus:border-[#fd961b]"
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="rounded-md bg-[#fd961b] px-5 py-3 font-semibold text-black transition hover:bg-orange-400"
+              >
+                Assign Agent
+              </button>
+            </form>
+          )}
         </section>
 
         <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
@@ -811,6 +987,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
               <p className="mt-2 text-sm text-neutral-400">
                 Project/client relationships and external Project IDs remain
                 fixed after creation. Project details may be updated here.
+                Active Agent assignments are shown directly in each Project row.
               </p>
 
               <p className="mt-2 text-xs text-neutral-500">
@@ -824,8 +1001,13 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
               className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_160px_160px_auto_auto] xl:items-end"
             >
               {parameters.client_q && (
-                <input type="hidden" name="client_q" value={parameters.client_q} />
+                <input
+                  type="hidden"
+                  name="client_q"
+                  value={parameters.client_q}
+                />
               )}
+
               {parameters.client_status && (
                 <input
                   type="hidden"
@@ -839,7 +1021,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                 <input
                   name="project_q"
                   defaultValue={parameters.project_q ?? ""}
-                  placeholder="Project, prefix, client, or notes"
+                  placeholder="Project, client, Agent, or notes"
                   autoComplete="off"
                   className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-[#fd961b]"
                 />
@@ -889,16 +1071,18 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
           </div>
 
           <div className="mt-5 overflow-x-auto">
-            <table className="w-full min-w-[1840px] text-left text-sm">
+            <table className="w-full min-w-[1980px] text-left text-sm">
               <thead className="border-b border-neutral-800 text-neutral-400">
                 <tr>
                   <th className="px-3 py-3 font-medium">Client</th>
-                  <th className="px-3 py-3 font-medium">External Project ID</th>
+                  <th className="px-3 py-3 font-medium">
+                    External Project ID
+                  </th>
                   <th className="px-3 py-3 font-medium">Project name</th>
                   <th className="px-3 py-3 font-medium">Task prefix</th>
                   <th className="px-3 py-3 font-medium">Status</th>
                   <th className="px-3 py-3 font-medium">Dashboard</th>
-                  <th className="px-3 py-3 font-medium">Active assignments</th>
+                  <th className="px-3 py-3 font-medium">Assigned Agents</th>
                   <th className="px-3 py-3 font-medium">Notes</th>
                   <th className="px-3 py-3 font-medium">Updated</th>
                   <th className="px-3 py-3 font-medium">Action</th>
@@ -909,6 +1093,8 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                 {filteredProjects.map((project) => {
                   const formId = `project-update-${project.id}`;
                   const client = clientById.get(project.client_id);
+                  const projectAssignments =
+                    activeAssignmentsByProject.get(project.id) ?? [];
 
                   return (
                     <tr
@@ -919,6 +1105,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                         <p className="font-medium">
                           {client?.client_code ?? "Unknown"}
                         </p>
+
                         <p className="mt-1 min-w-[180px] text-xs text-neutral-500">
                           {client?.client_name ?? "Client record unavailable"}
                         </p>
@@ -985,14 +1172,60 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                             defaultChecked={project.include_in_dashboard}
                             className="h-4 w-4 accent-[#fd961b]"
                           />
+
                           <span className="text-neutral-300">
-                            {project.include_in_dashboard ? "Included" : "Hidden"}
+                            {project.include_in_dashboard
+                              ? "Included"
+                              : "Hidden"}
                           </span>
                         </label>
                       </td>
 
-                      <td className="px-3 py-4 text-neutral-300">
-                        {activeAssignmentCountByProject.get(project.id) ?? 0}
+                      <td className="px-3 py-4">
+                        {projectAssignments.length === 0 ? (
+                          <p className="min-w-[240px] text-sm text-neutral-500">
+                            No active Agents
+                          </p>
+                        ) : (
+                          <div className="min-w-[260px] space-y-2">
+                            <p className="text-xs font-semibold text-neutral-400">
+                              {projectAssignments.length} active{" "}
+                              {projectAssignments.length === 1
+                                ? "assignment"
+                                : "assignments"}
+                            </p>
+
+                            <div className="space-y-2">
+                              {projectAssignments.map((assignment) => {
+                                const assignmentProfile =
+                                  getAssignmentProfile(assignment);
+                                const agentName =
+                                  assignmentProfile?.full_name?.trim() ||
+                                  assignmentProfile?.email ||
+                                  "Agent profile unavailable";
+                                const agentEmail =
+                                  assignmentProfile?.email ?? "";
+
+                                return (
+                                  <div
+                                    key={assignment.id}
+                                    className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2"
+                                  >
+                                    <p className="font-medium text-neutral-200">
+                                      {agentName}
+                                    </p>
+
+                                    {agentEmail && agentEmail !== agentName && (
+                                      <p className="mt-1 text-xs text-neutral-500">
+                                        {agentEmail}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </td>
 
                       <td className="px-3 py-4">
@@ -1017,7 +1250,12 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                           action="/dashboard/clients/projects/manage"
                           method="post"
                         >
-                          <input type="hidden" name="action" value="update" />
+                          <input
+                            type="hidden"
+                            name="action"
+                            value="update"
+                          />
+
                           <input
                             type="hidden"
                             name="project_id"
