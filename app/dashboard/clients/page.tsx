@@ -455,24 +455,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
           </div>
         )}
 
-        <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            ["Clients", clients.length],
-            ["Active clients", activeClientCount],
-            ["Active projects", activeProjectCount],
-            ["Active assignments", activeAssignments.length],
-          ].map(([label, value]) => (
-            <article
-              key={label}
-              className="rounded-xl border border-neutral-800 bg-neutral-900 p-5"
-            >
-              <p className="text-sm text-neutral-400">{label}</p>
-              <p className="mt-2 text-3xl font-bold">{value}</p>
-            </article>
-          ))}
-        </section>
-
-        <section id="client-information" className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
+        <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
           <h2 className="text-xl font-bold">A. Client Information</h2>
 
           <p className="mt-2 text-sm text-neutral-400">
@@ -545,7 +528,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
           </form>
         </section>
 
-        <section id="projects-subscriptions" className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
+        <section id="client-information" className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <h2 className="text-xl font-bold">Clients</h2>
@@ -894,8 +877,11 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
           )}
         </section>
 
-        <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
-          <h2 className="text-xl font-bold">Create a project</h2>
+        <section id="projects-subscriptions" className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#fd961b]">Section B</p>
+          <h2 className="mt-1 text-xl font-bold">Projects &amp; Subscriptions</h2>
+          <p className="mt-2 text-sm text-neutral-400">Manage existing project records and assignments. Subscription information is a pending feature and is not read from the database yet.</p>
+          <h3 className="mt-6 text-lg font-semibold">Create a project</h3>
 
           <p className="mt-2 text-sm text-neutral-400">
             Project IDs are permanent once created. Active projects require an
@@ -1340,10 +1326,10 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
-              ["Allocated minutes", "Not connected"],
-              ["Used minutes", "Not connected"],
-              ["Remaining balance", "Not connected"],
-              ["Credit expiry", "Not connected"],
+              ["Allocated minutes", "Backend pending"],
+              ["Used minutes", "Backend pending"],
+              ["Remaining balance", "Backend pending"],
+              ["Credit expiry", "Backend pending"],
             ].map(([label, value]) => (
               <article key={label} className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
                 <p className="text-sm text-neutral-400">{label}</p>
@@ -1351,8 +1337,26 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
               </article>
             ))}
           </div>
-          <div className="mt-4 rounded-lg border border-neutral-800 bg-neutral-950/60 p-4 text-sm text-neutral-400">
-            Credit actions are intentionally unavailable. No mock balance figures are shown, and this page does not create or change financial records.
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <article className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
+              <h3 className="font-semibold">Add-ons &amp; rollover</h3>
+              <p className="mt-1 text-sm text-neutral-400">Purchases and approved rollover history will be shown when the credit ledger is implemented.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" disabled aria-disabled="true" title="Available after backend implementation" className="cursor-not-allowed rounded-md border border-neutral-800 px-3 py-2 text-xs font-semibold text-neutral-500 opacity-70">Add-on credits</button>
+                <button type="button" disabled aria-disabled="true" title="Available after backend implementation" className="cursor-not-allowed rounded-md border border-neutral-800 px-3 py-2 text-xs font-semibold text-neutral-500 opacity-70">Approve rollover</button>
+              </div>
+            </article>
+            <article className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
+              <h3 className="font-semibold">Alerts &amp; transaction history</h3>
+              <p className="mt-1 text-sm text-neutral-400">Low-credit warnings, negative-balance alerts, and transaction records are not connected.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" disabled aria-disabled="true" title="Available after backend implementation" className="cursor-not-allowed rounded-md border border-neutral-800 px-3 py-2 text-xs font-semibold text-neutral-500 opacity-70">Adjust credits</button>
+                <button type="button" disabled aria-disabled="true" title="Available after backend implementation" className="cursor-not-allowed rounded-md border border-neutral-800 px-3 py-2 text-xs font-semibold text-neutral-500 opacity-70">View transaction history</button>
+              </div>
+            </article>
+          </div>
+          <div className="mt-4 rounded-lg border border-amber-900/70 bg-amber-950/20 p-4 text-sm text-amber-200">
+            Backend pending. No real credit balances are available, and all financial actions remain disabled.
           </div>
         </section>
       </div>
