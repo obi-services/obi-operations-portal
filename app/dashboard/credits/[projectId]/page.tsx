@@ -14,7 +14,7 @@ type ProjectRow = {
 };
 type ClientRow = { id: string; client_code: string; client_name: string; status: string };
 
-async function ProjectCreditsContent({async function ProjectCreditsPage({
+async function ProjectCreditsContent({
   params,
   searchParams,
 }: {
@@ -107,4 +107,13 @@ async function ProjectCreditsContent({async function ProjectCreditsPage({
       </div>
     </main>
   );
+}
+
+
+function ProjectCreditsLoading() {
+  return <main className="min-h-screen bg-neutral-950 px-4 py-8 text-white"><p className="text-sm text-neutral-400">Loading project credit workspace…</p></main>;
+}
+
+export default function ProjectCreditsPage(props: { params: Promise<{ projectId: string }>; searchParams: Promise<{ section?: string }> }) {
+  return <Suspense fallback={<ProjectCreditsLoading />}><ProjectCreditsContent {...props} /></Suspense>;
 }
