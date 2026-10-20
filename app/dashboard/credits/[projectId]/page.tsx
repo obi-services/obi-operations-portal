@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
 import { requirePortalProfile } from "@/lib/auth/require-portal-profile";
 import { createClient } from "@/lib/supabase/server";
@@ -13,7 +14,7 @@ type ProjectRow = {
 };
 type ClientRow = { id: string; client_code: string; client_name: string; status: string };
 
-export default async function ProjectCreditsPage({
+async function ProjectCreditsContent({async function ProjectCreditsPage({
   params,
   searchParams,
 }: {
