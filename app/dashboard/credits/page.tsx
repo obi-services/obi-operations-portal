@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { requirePortalProfile } from "@/lib/auth/require-portal-profile";
 import { createClient } from "@/lib/supabase/server";
 
@@ -11,7 +12,7 @@ type ProjectRow = {
   status: string;
 };
 
-export default async function CreditsOverviewPage() {
+async function CreditsOverviewContent() {async function CreditsOverviewPage() {
   const profile = await requirePortalProfile();
   if (profile.role === "agent") {
     return (
