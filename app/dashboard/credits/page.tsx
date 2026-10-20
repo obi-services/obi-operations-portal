@@ -12,7 +12,7 @@ type ProjectRow = {
   status: string;
 };
 
-async function CreditsOverviewContent() {async function CreditsOverviewPage() {
+async function CreditsOverviewContent() {
   const profile = await requirePortalProfile();
   if (profile.role === "agent") {
     return (
@@ -103,4 +103,13 @@ async function CreditsOverviewContent() {async function CreditsOverviewPage() {
       </div>
     </main>
   );
+}
+
+
+function CreditsOverviewLoading() {
+  return <main className="min-h-screen bg-neutral-950 px-4 py-8 text-white"><p className="text-sm text-neutral-400">Loading credits overview…</p></main>;
+}
+
+export default function CreditsOverviewPage() {
+  return <Suspense fallback={<CreditsOverviewLoading />}><CreditsOverviewContent /></Suspense>;
 }
