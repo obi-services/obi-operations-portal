@@ -32,13 +32,10 @@ export const portalModules: PortalModule[] = [
   {
     key: "credits",
     title: "Credits",
-    agentTitle: "My Credits",
     description:
-      "Monitor used, remaining, low, and depleted client credits.",
-    agentDescription:
-      "Review credit usage and balances for your assigned clients.",
+      "Review project credit accounts and monitoring status. Financial data is pending backend implementation.",
     href: "/dashboard/credits",
-    roles: ["admin", "supervisor", "agent"],
+    roles: privilegedRoles,
   },
   {
     key: "tasks",
@@ -63,7 +60,7 @@ export const portalModules: PortalModule[] = [
     key: "add-ons",
     title: "Add-ons",
     description:
-      "Manage additional credits, rollover credits, and adjustments.",
+      "Open project-specific Add-ons. Credit changes are disabled pending backend implementation.",
     href: "/dashboard/add-ons",
     roles: privilegedRoles,
   },
