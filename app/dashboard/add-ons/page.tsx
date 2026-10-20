@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 type ProjectRow = { id: string; client_id: string; external_project_id: string; project_name: string; status: string };
 type ClientRow = { id: string; client_code: string; client_name: string };
 
-async function AddOnsContent({ searchParams }: { searchParams: Promise<{ project?: string }> }) {async function AddOnsPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
+async function AddOnsContent({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const profile = await requirePortalProfile();
   if (profile.role === "agent") redirect("/dashboard");
   const { project: selectedProjectId } = await searchParams;
@@ -84,4 +84,13 @@ async function AddOnsContent({ searchParams }: { searchParams: Promise<{ project
       </div>
     </main>
   );
+}
+
+
+function AddOnsLoading() {
+  return <main className="min-h-screen bg-neutral-950 px-4 py-8 text-white"><p className="text-sm text-neutral-400">Loading Add-ons…</p></main>;
+}
+
+export default function AddOnsPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
+  return <Suspense fallback={<AddOnsLoading />}><AddOnsContent searchParams={searchParams} /></Suspense>;
 }
