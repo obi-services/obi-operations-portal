@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { requirePortalProfile } from "@/lib/auth/require-portal-profile";
 import { createClient } from "@/lib/supabase/server";
@@ -6,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 type ProjectRow = { id: string; client_id: string; external_project_id: string; project_name: string; status: string };
 type ClientRow = { id: string; client_code: string; client_name: string };
 
-export default async function AddOnsPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
+async function AddOnsContent({ searchParams }: { searchParams: Promise<{ project?: string }> }) {async function AddOnsPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const profile = await requirePortalProfile();
   if (profile.role === "agent") redirect("/dashboard");
   const { project: selectedProjectId } = await searchParams;
