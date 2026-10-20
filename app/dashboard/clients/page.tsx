@@ -1001,6 +1001,33 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
           )}
         </section>
 
+        <section aria-labelledby="subscription-overview-heading" className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#fd961b]">Subscription overview</p>
+              <h3 id="subscription-overview-heading" className="mt-1 text-lg font-semibold">Plans, expiry &amp; renewals</h3>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">Subscription records are not available in the current database schema. This panel intentionally shows no plan names, expiry dates, or renewal schedules.</p>
+            </div>
+            <span className="inline-flex w-fit items-center rounded-full border border-amber-900 bg-amber-950/40 px-3 py-1 text-xs font-semibold text-amber-300">Backend pending</span>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            {[
+              ["Subscription plan", "Not connected"],
+              ["Expiry type", "Not connected"],
+              ["Renewal schedule", "Not connected"],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
+                <p className="text-sm text-neutral-400">{label}</p>
+                <p className="mt-2 text-sm font-semibold text-neutral-300">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" disabled aria-disabled="true" title="Available after subscription backend implementation" className="cursor-not-allowed rounded-md border border-neutral-800 px-4 py-2 text-sm font-semibold text-neutral-500 opacity-70">Configure subscription</button>
+            <button type="button" disabled aria-disabled="true" title="Available after subscription backend implementation" className="cursor-not-allowed rounded-md border border-neutral-800 px-4 py-2 text-sm font-semibold text-neutral-500 opacity-70">Renew subscription</button>
+          </div>
+        </section>
+
         <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
@@ -1103,6 +1130,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                   <th className="px-3 py-3 font-medium">Project name</th>
                   <th className="px-3 py-3 font-medium">Task prefix</th>
                   <th className="px-3 py-3 font-medium">Status</th>
+                  <th className="px-3 py-3 font-medium">Subscription</th>
                   <th className="px-3 py-3 font-medium">Dashboard</th>
                   <th className="px-3 py-3 font-medium">Assigned Agents</th>
                   <th className="px-3 py-3 font-medium">Notes</th>
@@ -1182,6 +1210,13 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                           >
                             Current: {formatLabel(project.status)}
                           </span>
+                        </div>
+                      </td>
+
+                      <td className="px-3 py-4">
+                        <div className="min-w-[150px]">
+                          <span className="inline-flex rounded-full border border-amber-900 bg-amber-950/40 px-2.5 py-1 text-xs font-semibold text-amber-300">Backend pending</span>
+                          <p className="mt-2 text-xs text-neutral-500">No subscription data</p>
                         </div>
                       </td>
 
@@ -1299,7 +1334,7 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                 {filteredProjects.length === 0 && (
                   <tr>
                     <td
-                      colSpan={10}
+                      colSpan={11}
                       className="px-3 py-8 text-center text-neutral-500"
                     >
                       {projects.length === 0
