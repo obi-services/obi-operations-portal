@@ -1162,7 +1162,13 @@ async function ClientsContent({ searchParams }: ClientsPageProps) {
                       </td>
 
                       <td className="px-3 py-4 font-medium text-[#fd961b]">
-                        {project.external_project_id}
+                        <span>{project.external_project_id}</span>
+                        <Link
+                          href={`/dashboard/credits/${project.id}`}
+                          className="mt-2 block w-fit rounded-md border border-neutral-700 px-2.5 py-1.5 text-xs font-semibold text-neutral-200 hover:border-[#fd961b] hover:text-white"
+                        >
+                          View Credits
+                        </Link>
                       </td>
 
                       <td className="px-3 py-4">
